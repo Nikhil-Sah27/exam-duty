@@ -244,42 +244,32 @@ const assignRooms = async (data) => {
     roomCapacityUsage.set(key, current + students);
   }
 
-  // Create primary room assignments
-  const primaryResults = await Promise.all(
-    primary.map((a) =>
+  // Group ALL assignments (primary + shared) by schedule+room to avoid unique index conflicts
+  const roomGroups = new Map();
+  for (const a of [...primary, ...shared]) {
+    const key = `${a.scheduleId}|${a.roomId}`;
+    if (!roomGroups.has(key)) {
+      roomGroups.set(key, {
+        scheduleId: a.scheduleId,
+        roomId: a.roomId,
+        departments: new Set(),
+      });
+    }
+    roomGroups.get(key).departments.add(a.departmentCode);
+  }
+
+  // Create one ExamRoom per unique schedule+room with all departments merged
+  const results = await Promise.all(
+    Array.from(roomGroups.values()).map((group) =>
       ExamRoom.create({
-        schedule: a.scheduleId,
-        room: a.roomId,
-        departments: [a.departmentCode],
+        schedule: group.scheduleId,
+        room: group.roomId,
+        departments: Array.from(group.departments),
       })
     )
   );
 
-  // Create shared room assignments (add dept to existing ExamRoom or create new)
-  for (const a of shared) {
-    // Find existing ExamRoom for this schedule+room
-    const existing = await ExamRoom.findOne({
-      schedule: a.scheduleId,
-      room: a.roomId,
-    });
-
-    if (existing) {
-      // Add the sharing department if not already present
-      if (!existing.departments.includes(a.departmentCode)) {
-        existing.departments.push(a.departmentCode);
-        await existing.save();
-      }
-    } else {
-      // Create new ExamRoom entry for the shared assignment
-      await ExamRoom.create({
-        schedule: a.scheduleId,
-        room: a.roomId,
-        departments: [a.departmentCode],
-      });
-    }
-  }
-
-  return primaryResults;
+  return results;
 };
 
 /**
