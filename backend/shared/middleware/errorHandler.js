@@ -1,0 +1,41 @@
+const AppError = require("../utils/AppError");
+
+const errorHandler = (err, req, res, next) => {
+  // Mongoose validation error → 400
+  if (err.name === "ValidationError") {
+    const messages = Object.values(err.errors).map((e) => e.message);
+    err = new AppError(messages.join(", "), 400);
+  }
+
+  // Mongoose duplicate key → 409
+  if (err.code === 11000) {
+    const fields = Object.keys(err.keyPattern);
+    const values = err.keyValue || {};
+    let message;
+    if (fields.includes("roomNumber") && fields.includes("building")) {
+      message = `Room number "${values.roomNumber}" already exists in this building`;
+    } else if (fields.includes("name")) {
+      message = `"${values.name}" already exists`;
+    } else {
+      message = `${fields.join(", ")} already exists`;
+    }
+    err = new AppError(message, 409);
+  }
+
+  // Mongoose bad ObjectId → 400
+  if (err.name === "CastError") {
+    err = new AppError(`Invalid ${err.path}: ${err.value}`, 400);
+  }
+
+  const statusCode = err.statusCode || 500;
+  const message = err.message || "Internal Server Error";
+
+  res.status(statusCode).json({
+    success: false,
+    statusCode,
+    message,
+    ...(process.env.NODE_ENV === "development" && { stack: err.stack }),
+  });
+};
+
+module.exports = errorHandler;

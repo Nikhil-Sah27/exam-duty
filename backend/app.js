@@ -1,0 +1,52 @@
+const express = require("express");
+const cors = require("cors");
+const errorHandler = require("./shared/middleware/errorHandler");
+
+const app = express();
+
+// CORS — allow frontend origin
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "http://localhost:3002",
+];
+
+// Allow ngrok origins dynamically
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin) || /\.ngrok-free\.app$/.test(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
+}));
+
+// Body parsers
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Health check
+app.get("/", (req, res) => {
+  res.json({ status: "ok", message: "Server is running" });
+});
+
+// Module routes
+app.use("/api/auth", require("./modules/auth/auth.routes"));
+app.use("/api/users", require("./modules/user/user.routes"));
+app.use("/api/exams", require("./modules/exam/exam.routes"));
+app.use("/api/exam-groups", require("./modules/exam/examGroup.routes"));
+app.use("/api/create-exams", require("./modules/create-exams/createExams.routes"));
+app.use("/api/duties", require("./modules/duty/duty.routes"));
+app.use("/api/change-requests", require("./modules/change-request/changeRequest.routes"));
+app.use("/api/notifications", require("./modules/notification/notification.routes"));
+app.use("/api/departments", require("./modules/department/department.routes"));
+app.use("/api/infrastructure", require("./modules/infrastructure/infrastructure.routes"));
+app.use("/api/reports", require("./modules/report/report.routes"));
+app.use("/api/audit", require("./modules/audit/audit.routes"));
+
+// Global error handler (must be after all routes)
+app.use(errorHandler);
+
+module.exports = app;

@@ -1,0 +1,38 @@
+import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuthStore } from "@/shared/store/auth.store";
+import { useMe } from "@/modules/auth/hooks";
+
+export default function AuthGuard({ children }: { children: React.ReactNode }) {
+  const token = useAuthStore((s) => s.token);
+  const user = useAuthStore((s) => s.user);
+  const isHydrated = useAuthStore((s) => s.isHydrated);
+  const hydrate = useAuthStore((s) => s.hydrate);
+  const setUser = useAuthStore((s) => s.setUser);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    hydrate();
+  }, [hydrate]);
+
+  // Fetch user profile when we have a token but no user (e.g. after page refresh)
+  const { data: me } = useMe();
+
+  useEffect(() => {
+    if (me && !user) {
+      setUser(me);
+    }
+  }, [me, user, setUser]);
+
+  useEffect(() => {
+    if (isHydrated && !token) {
+      navigate("/login", { replace: true });
+    }
+  }, [isHydrated, token, navigate]);
+
+  if (!isHydrated || !token) {
+    return null;
+  }
+
+  return <>{children}</>;
+}

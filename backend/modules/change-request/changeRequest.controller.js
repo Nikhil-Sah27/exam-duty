@@ -1,0 +1,38 @@
+const changeRequestService = require("./changeRequest.service");
+const catchAsync = require("../../shared/utils/catchAsync");
+
+const submit = catchAsync(async (req, res) => {
+  const request = await changeRequestService.submitRequest(req.body, req.user.id);
+  res.status(201).json({ success: true, data: request });
+});
+
+const getAll = catchAsync(async (req, res) => {
+  const requests = await changeRequestService.getAllRequests(req.query);
+  res.status(200).json({ success: true, count: requests.length, data: requests });
+});
+
+const getById = catchAsync(async (req, res) => {
+  const request = await changeRequestService.getRequestById(req.params.id);
+  res.status(200).json({ success: true, data: request });
+});
+
+const getMine = catchAsync(async (req, res) => {
+  const requests = await changeRequestService.getMyRequests(req.user.id);
+  res.status(200).json({ success: true, count: requests.length, data: requests });
+});
+
+const approve = catchAsync(async (req, res) => {
+  const request = await changeRequestService.approveRequest(
+    req.params.id, req.user.id, req.body.note
+  );
+  res.status(200).json({ success: true, data: request });
+});
+
+const reject = catchAsync(async (req, res) => {
+  const request = await changeRequestService.rejectRequest(
+    req.params.id, req.user.id, req.body.note
+  );
+  res.status(200).json({ success: true, data: request });
+});
+
+module.exports = { submit, getAll, getById, getMine, approve, reject };
