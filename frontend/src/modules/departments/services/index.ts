@@ -4,9 +4,11 @@ import {
   DepartmentStats,
   Semester,
   Course,
+  ElectiveGroup,
   CreateDepartmentPayload,
   CreateSemesterPayload,
   CreateCoursePayload,
+  CreateElectiveGroupPayload,
   DepartmentListResponse,
   DepartmentResponse,
   DepartmentStatsResponse,
@@ -14,6 +16,8 @@ import {
   SemesterResponse,
   CourseListResponse,
   CourseResponse,
+  ElectiveGroupListResponse,
+  ElectiveGroupResponse,
 } from "../types";
 
 // ---------- Department ----------
@@ -61,6 +65,27 @@ export const updateSemester = async (id: string, data: Partial<CreateSemesterPay
 
 export const deleteSemester = async (id: string): Promise<void> => {
   await api.delete(`/departments/semesters/${id}`);
+};
+
+// ---------- Elective Group ----------
+
+export const fetchElectiveGroups = async (semesterId: string): Promise<ElectiveGroup[]> => {
+  const res = await api.get<ElectiveGroupListResponse>(`/departments/semesters/${semesterId}/elective-groups`);
+  return res.data.data;
+};
+
+export const createElectiveGroup = async (data: CreateElectiveGroupPayload): Promise<ElectiveGroup> => {
+  const res = await api.post<ElectiveGroupResponse>("/departments/elective-groups", data);
+  return res.data.data;
+};
+
+export const updateElectiveGroup = async (id: string, data: Partial<CreateElectiveGroupPayload>): Promise<ElectiveGroup> => {
+  const res = await api.patch<ElectiveGroupResponse>(`/departments/elective-groups/${id}`, data);
+  return res.data.data;
+};
+
+export const deleteElectiveGroup = async (id: string): Promise<void> => {
+  await api.delete(`/departments/elective-groups/${id}`);
 };
 
 // ---------- Course ----------

@@ -27,13 +27,27 @@ export interface CourseExams {
   see: boolean;
 }
 
+export type CourseType = "core" | "professional_elective" | "open_elective";
+
 export interface Course {
   _id: string;
   name: string;
   code: string;
   credits: number;
   semester: string;
+  courseType: CourseType;
+  electiveGroup: { _id: string; name: string; type: string } | string | null;
+  studentCount: number;
   exams: CourseExams;
+  createdAt: string;
+}
+
+export interface ElectiveGroup {
+  _id: string;
+  name: string;
+  type: "professional" | "open";
+  semester: string;
+  courses: Course[];
   createdAt: string;
 }
 
@@ -54,6 +68,15 @@ export interface CreateCoursePayload {
   credits: number;
   semester: string;
   exams: CourseExams;
+  courseType?: CourseType;
+  electiveGroup?: string | null;
+  studentCount?: number;
+}
+
+export interface CreateElectiveGroupPayload {
+  name: string;
+  type: "professional" | "open";
+  semester: string;
 }
 
 interface ListResponse<T> {
@@ -74,3 +97,5 @@ export type SemesterListResponse = ListResponse<Semester>;
 export type SemesterResponse = SingleResponse<Semester>;
 export type CourseListResponse = ListResponse<Course>;
 export type CourseResponse = SingleResponse<Course>;
+export type ElectiveGroupListResponse = ListResponse<ElectiveGroup>;
+export type ElectiveGroupResponse = SingleResponse<ElectiveGroup>;

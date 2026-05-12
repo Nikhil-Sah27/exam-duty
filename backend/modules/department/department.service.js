@@ -73,10 +73,29 @@ const getCourses = async (semesterId) => {
   return repo.findCoursesBySemester(semesterId);
 };
 
-const createCourse = async ({ name, code, credits, semester, exams }) => {
+const createCourse = async ({ name, code, credits, semester, exams, courseType, electiveGroup, studentCount }) => {
   const sem = await repo.findSemesterById(semester);
   if (!sem) throw new AppError("Semester not found", 404);
-  return repo.createCourse({ name, code, credits, semester, exams });
+
+  // Validate elective group if provided
+  if (electiveGroup) {
+    const group = await repo.findElectiveGroupById(electiveGroup);
+    if (!group) throw new AppError("Elective group not found", 404);
+    if (group.semester.toString() !== semester) {
+      throw new AppError("Elective group does not belong to this semester", 400);
+    }
+  }
+
+  return repo.createCourse({
+    name,
+    code,
+    credits,
+    semester,
+    exams,
+    courseType: courseType || "core",
+    electiveGroup: electiveGroup || null,
+    studentCount: studentCount || 0,
+  });
 };
 
 const updateCourse = async (id, data) => {
@@ -89,6 +108,56 @@ const deleteCourse = async (id) => {
   const course = await repo.findCourseById(id);
   if (!course) throw new AppError("Course not found", 404);
   await repo.deleteCourse(id);
+};
+
+// ---------- Elective Group ----------
+
+const getElectiveGroups = async (semesterId) => {
+  const sem = await repo.findSemesterById(semesterId);
+  if (!sem) throw new AppError("Semester not found", 404);
+
+  const groups = await repo.findElectiveGroupsBySemester(semesterId);
+
+  // Attach courses to each group
+  const result = [];
+  for (const group of groups) {
+    const courses = await repo.findCoursesByElectiveGroup(group._id);
+    result.push({
+      ...group.toObject(),
+      courses,
+    });
+  }
+
+  return result;
+};
+
+const createElectiveGroup = async ({ name, type, semester }) => {
+  const sem = await repo.findSemesterById(semester);
+  if (!sem) throw new AppError("Semester not found", 404);
+  return repo.createElectiveGroup({ name, type, semester });
+};
+
+const updateElectiveGroup = async (id, data) => {
+  const group = await repo.updateElectiveGroup(id, data);
+  if (!group) throw new AppError("Elective group not found", 404);
+  return group;
+};
+
+const deleteElectiveGroup = async (id) => {
+  const group = await repo.findElectiveGroupById(id);
+  if (!group) throw new AppError("Elective group not found", 404);
+
+  // Remove elective group reference from all courses in this group
+  const courses = await repo.findCoursesByElectiveGroup(id);
+  for (const course of courses) {
+    await repo.updateCourse(course._id, {
+      courseType: "core",
+      electiveGroup: null,
+      studentCount: 0,
+    });
+  }
+
+  await repo.deleteElectiveGroup(id);
 };
 
 module.exports = {
@@ -105,4 +174,8 @@ module.exports = {
   createCourse,
   updateCourse,
   deleteCourse,
+  getElectiveGroups,
+  createElectiveGroup,
+  updateElectiveGroup,
+  deleteElectiveGroup,
 };

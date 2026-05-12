@@ -72,6 +72,28 @@ const deleteCourse = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, message: "Course deleted" });
 });
 
+// ---------- Elective Group ----------
+
+const getElectiveGroups = catchAsync(async (req, res) => {
+  const groups = await service.getElectiveGroups(req.params.semesterId);
+  res.status(200).json({ success: true, count: groups.length, data: groups });
+});
+
+const createElectiveGroup = catchAsync(async (req, res) => {
+  const group = await service.createElectiveGroup(req.body);
+  res.status(201).json({ success: true, data: group });
+});
+
+const updateElectiveGroup = catchAsync(async (req, res) => {
+  const group = await service.updateElectiveGroup(req.params.id, req.body);
+  res.status(200).json({ success: true, data: group });
+});
+
+const deleteElectiveGroup = catchAsync(async (req, res) => {
+  await service.deleteElectiveGroup(req.params.id);
+  res.status(200).json({ success: true, message: "Elective group deleted" });
+});
+
 module.exports = {
   create,
   getAll,
@@ -86,4 +108,8 @@ module.exports = {
   createCourse,
   updateCourse,
   deleteCourse,
+  getElectiveGroups,
+  createElectiveGroup,
+  updateElectiveGroup,
+  deleteElectiveGroup,
 };

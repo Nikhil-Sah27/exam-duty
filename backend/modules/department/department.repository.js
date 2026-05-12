@@ -1,6 +1,7 @@
 const Department = require("./department.model");
 const Semester = require("./semester.model");
 const Course = require("./course.model");
+const ElectiveGroup = require("./electiveGroup.model");
 
 // ---------- Department ----------
 
@@ -35,7 +36,9 @@ const deleteSemester = (id) => Semester.findByIdAndDelete(id);
 const createCourse = (data) => Course.create(data);
 
 const findCoursesBySemester = (semesterId) =>
-  Course.find({ semester: semesterId }).sort({ code: 1 });
+  Course.find({ semester: semesterId })
+    .populate("electiveGroup", "name type")
+    .sort({ courseType: 1, code: 1 });
 
 const findCourseById = (id) => Course.findById(id);
 
@@ -43,6 +46,23 @@ const updateCourse = (id, data) =>
   Course.findByIdAndUpdate(id, data, { new: true, runValidators: true });
 
 const deleteCourse = (id) => Course.findByIdAndDelete(id);
+
+// ---------- Elective Group ----------
+
+const createElectiveGroup = (data) => ElectiveGroup.create(data);
+
+const findElectiveGroupsBySemester = (semesterId) =>
+  ElectiveGroup.find({ semester: semesterId }).sort({ type: 1, name: 1 });
+
+const findElectiveGroupById = (id) => ElectiveGroup.findById(id);
+
+const updateElectiveGroup = (id, data) =>
+  ElectiveGroup.findByIdAndUpdate(id, data, { new: true, runValidators: true });
+
+const deleteElectiveGroup = (id) => ElectiveGroup.findByIdAndDelete(id);
+
+const findCoursesByElectiveGroup = (groupId) =>
+  Course.find({ electiveGroup: groupId }).sort({ code: 1 });
 
 // ---------- Stats ----------
 
@@ -79,6 +99,12 @@ module.exports = {
   findCourseById,
   updateCourse,
   deleteCourse,
+  createElectiveGroup,
+  findElectiveGroupsBySemester,
+  findElectiveGroupById,
+  updateElectiveGroup,
+  deleteElectiveGroup,
+  findCoursesByElectiveGroup,
   countSemestersByDept,
   countCoursesByDept,
   sumStudentsByDept,

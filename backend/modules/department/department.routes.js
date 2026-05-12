@@ -19,6 +19,12 @@ router.post("/semesters", c.createSemester);
 router.patch("/semesters/:id", c.updateSemester);
 router.delete("/semesters/:id", c.deleteSemester);
 
+// Elective Groups
+router.get("/semesters/:semesterId/elective-groups", c.getElectiveGroups);
+router.post("/elective-groups", c.createElectiveGroup);
+router.patch("/elective-groups/:id", c.updateElectiveGroup);
+router.delete("/elective-groups/:id", c.deleteElectiveGroup);
+
 // Courses
 router.get("/semesters/:semesterId/courses", c.getCourses);
 router.post("/courses", c.createCourse);

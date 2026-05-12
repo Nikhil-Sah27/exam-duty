@@ -13,13 +13,23 @@ import {
   createCourse,
   updateCourse,
   deleteCourse,
+  fetchElectiveGroups,
+  createElectiveGroup,
+  updateElectiveGroup,
+  deleteElectiveGroup,
 } from "../services";
-import { CreateDepartmentPayload, CreateSemesterPayload, CreateCoursePayload } from "../types";
+import {
+  CreateDepartmentPayload,
+  CreateSemesterPayload,
+  CreateCoursePayload,
+  CreateElectiveGroupPayload,
+} from "../types";
 
 const DEPTS_KEY = ["departments"];
 const deptStatsKey = (id: string) => ["departments", id, "stats"];
 const semestersKey = (deptId: string) => ["departments", deptId, "semesters"];
 const coursesKey = (semId: string) => ["semesters", semId, "courses"];
+const electiveGroupsKey = (semId: string) => ["semesters", semId, "elective-groups"];
 
 // ---------- Department ----------
 
@@ -101,6 +111,47 @@ export const useDeleteSemester = (deptId: string) => {
   });
 };
 
+// ---------- Elective Group ----------
+
+export const useElectiveGroups = (semesterId: string) =>
+  useQuery({
+    queryKey: electiveGroupsKey(semesterId),
+    queryFn: () => fetchElectiveGroups(semesterId),
+    enabled: !!semesterId,
+  });
+
+export const useCreateElectiveGroup = (semesterId: string, deptId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateElectiveGroupPayload) => createElectiveGroup(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: electiveGroupsKey(semesterId) });
+      qc.invalidateQueries({ queryKey: deptStatsKey(deptId) });
+    },
+  });
+};
+
+export const useUpdateElectiveGroup = (semesterId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<CreateElectiveGroupPayload> }) =>
+      updateElectiveGroup(id, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: electiveGroupsKey(semesterId) }),
+  });
+};
+
+export const useDeleteElectiveGroup = (semesterId: string, deptId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteElectiveGroup(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: electiveGroupsKey(semesterId) });
+      qc.invalidateQueries({ queryKey: coursesKey(semesterId) });
+      qc.invalidateQueries({ queryKey: deptStatsKey(deptId) });
+    },
+  });
+};
+
 // ---------- Course ----------
 
 export const useCourses = (semesterId: string) =>
@@ -116,6 +167,7 @@ export const useCreateCourse = (semesterId: string, deptId: string) => {
     mutationFn: (data: CreateCoursePayload) => createCourse(data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: coursesKey(semesterId) });
+      qc.invalidateQueries({ queryKey: electiveGroupsKey(semesterId) });
       qc.invalidateQueries({ queryKey: deptStatsKey(deptId) });
     },
   });
@@ -128,6 +180,7 @@ export const useUpdateCourse = (semesterId: string, deptId: string) => {
       updateCourse(id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: coursesKey(semesterId) });
+      qc.invalidateQueries({ queryKey: electiveGroupsKey(semesterId) });
       qc.invalidateQueries({ queryKey: deptStatsKey(deptId) });
     },
   });
@@ -139,6 +192,7 @@ export const useDeleteCourse = (semesterId: string, deptId: string) => {
     mutationFn: (id: string) => deleteCourse(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: coursesKey(semesterId) });
+      qc.invalidateQueries({ queryKey: electiveGroupsKey(semesterId) });
       qc.invalidateQueries({ queryKey: deptStatsKey(deptId) });
     },
   });
