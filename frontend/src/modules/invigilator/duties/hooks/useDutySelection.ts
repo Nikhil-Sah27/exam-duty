@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/shared/store/auth.store";
 import { useDutiesByTeacher } from "@/modules/shared/exams/hooks/useSharedExamData";
+import { getRoleConfig } from "@/modules/shared/role-config/roleConfig";
 import {
   selectDuty,
   cancelDutySelection,
@@ -43,11 +44,18 @@ export function useDutySelection(
   isPending: boolean = false
 ): UseDutySelectionResult {
   const queryClient = useQueryClient();
-  const userId = useAuthStore((s) => s.user?.id);
-  const dutiesQuery = useDutiesByTeacher(userId);
+  const user = useAuthStore((s) => s.user);
+  const dutiesQuery = useDutiesByTeacher(user?.id);
   const myDuties = dutiesQuery.data ?? [];
 
-  const state = deriveSelectionState(slot, myDuties, isPending);
+  // Role-aware "FULL" check: the current user owns this slot iff THEIR role
+  // flag is already true. Invigilator → invigilatorAssigned, RS → rsAssigned.
+  // Falls back to invigilator for unknown/admin roles so the hook is safe to
+  // call from contexts where the user isn't an operational role.
+  const config = getRoleConfig(user?.role);
+  const flagKey = config?.flagKey ?? "invigilatorAssigned";
+
+  const state = deriveSelectionState(slot, myDuties, flagKey, isPending);
 
   const invalidateSharedExamData = () => {
     queryClient.invalidateQueries({ queryKey: ["shared", "duty-status"] });

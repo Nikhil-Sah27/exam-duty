@@ -1,11 +1,16 @@
 import { Link, useLocation } from "react-router-dom";
 import { useAppStore } from "@/shared/store/app.store";
-import { INVIGILATOR_CONFIG } from "@/modules/shared/role-config/roleConfig";
+import { RS_CONFIG } from "@/modules/shared/role-config/roleConfig";
 
-export default function InvigilatorSidebar() {
+/**
+ * Visual twin of InvigilatorSidebar — same styling, same Tailwind classes,
+ * same shared `useAppStore.sidebarOpen` state. The only difference is the
+ * nav items + section label, both sourced from the role config.
+ */
+export default function RSSidebar() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const { pathname } = useLocation();
-  const { sectionLabel, navItems } = INVIGILATOR_CONFIG;
+  const { sectionLabel, navItems } = RS_CONFIG;
 
   return (
     <aside

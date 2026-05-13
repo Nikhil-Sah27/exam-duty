@@ -17,6 +17,7 @@ import AuditPage from "@/modules/audit/components/AuditPage";
 import ManageDutiesPage from "@/modules/manage-duties/components/ManageDutiesPage";
 import TeacherDetailsPage from "@/modules/manage-duties/components/TeacherDetailsPage";
 import { invigilatorRoutes } from "@/modules/invigilator/routes/invigilatorRoutes";
+import { rsRoutes } from "@/modules/rs/routes/rsRoutes";
 
 export default function App() {
   return (
@@ -40,6 +41,7 @@ export default function App() {
         <Route path="/audit" element={<AuditPage />} />
       </Route>
       {invigilatorRoutes}
+      {rsRoutes}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

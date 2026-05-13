@@ -27,7 +27,7 @@ export default function InvigilatorExamDetailsPage() {
   return (
     <div className="space-y-6">
       <nav className="flex items-center gap-1 text-sm text-gray-400">
-        <Link to="/invigilator/exams" className="transition-colors hover:text-gray-700">
+        <Link to=".." className="transition-colors hover:text-gray-700">
           Exams
         </Link>
         <ChevronRight className="h-3.5 w-3.5" />

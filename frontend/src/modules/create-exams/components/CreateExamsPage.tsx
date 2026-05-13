@@ -2,7 +2,7 @@ import { useState } from "react";
 import CreateExamHeader from "./CreateExamHeader";
 import ExamTypeSelector, { type ExamFlow } from "./ExamTypeSelector";
 import CIEPage from "../pages/CIEPage";
-import SEEWorkflowPlaceholder from "./SEEWorkflowPlaceholder";
+import SEEExamSetupPage from "../see/pages/SEEExamSetupPage";
 
 export default function CreateExamsPage() {
   const [selected, setSelected] = useState<ExamFlow | null>(null);
@@ -18,7 +18,7 @@ export default function CreateExamsPage() {
         </p>
       )}
       {selected === "CIE" && <CIEPage />}
-      {selected === "SEE" && <SEEWorkflowPlaceholder />}
+      {selected === "SEE" && <SEEExamSetupPage />}
     </div>
   );
 }

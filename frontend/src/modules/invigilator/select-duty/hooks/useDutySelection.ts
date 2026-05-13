@@ -5,6 +5,7 @@ import {
   useAvailableDutySlots,
   useDutiesByTeacher,
 } from "@/modules/shared/exams/hooks/useSharedExamData";
+import { getRoleConfig } from "@/modules/shared/role-config/roleConfig";
 import { selectDuty } from "@/modules/invigilator/duties/services/invigilatorDutyService";
 import type { DutyFilters, DutySlot, SlotState } from "../types";
 import { EMPTY_FILTERS } from "../types";
@@ -18,10 +19,12 @@ const selectDutyApi = (slot: DutySlot) =>
 
 export function useDutySelection() {
   const queryClient = useQueryClient();
-  const userId = useAuthStore((s) => s.user?.id);
+  const user = useAuthStore((s) => s.user);
+  const roleConfig = getRoleConfig(user?.role);
+  const flagKey = roleConfig?.flagKey ?? "invigilatorAssigned";
 
   const slotsQuery = useAvailableDutySlots();
-  const dutiesQuery = useDutiesByTeacher(userId);
+  const dutiesQuery = useDutiesByTeacher(user?.id);
 
   const [filters, setFilters] = useState<DutyFilters>(EMPTY_FILTERS);
   const [selected, setSelected] = useState<DutySlot[]>([]);
@@ -54,10 +57,10 @@ export function useDutySelection() {
   const stateOf = useCallback(
     (slot: DutySlot): SlotState => {
       if (selected.some((s) => s.slotId === slot.slotId)) return "SELECTED";
-      if (slot.invigilatorAssigned) return "FULL";
+      if (slot.flags[flagKey]) return "FULL";
       return "AVAILABLE";
     },
-    [selected]
+    [selected, flagKey]
   );
 
   const tryToggleSlot = useCallback(
@@ -68,14 +71,14 @@ export function useDutySelection() {
         setSelected((prev) => prev.filter((s) => s.slotId !== slot.slotId));
         return;
       }
-      const result = validateSelection(slot, selected, myDuties);
+      const result = validateSelection(slot, selected, myDuties, flagKey);
       if (!result.ok) {
         setFeedback(result.reason || "Cannot select this slot.");
         return;
       }
       setSelected((prev) => [...prev, slot]);
     },
-    [selected, myDuties]
+    [selected, myDuties, flagKey]
   );
 
   const removeSlot = useCallback((slotId: string) => {

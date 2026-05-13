@@ -1,4 +1,5 @@
 import type { Duty } from "@/modules/duties/types";
+import type { RoomDutyFlags } from "@/modules/shared/exams/types/exam.types";
 import type { DutySlot, SelectionValidation } from "../types";
 
 function toMinutes(time: string): number {
@@ -45,13 +46,23 @@ export function findTimeConflict(
   return null;
 }
 
+const ROLE_LABEL: Record<keyof RoomDutyFlags, string> = {
+  invigilatorAssigned: "invigilator",
+  rsAssigned: "room superintendent",
+  dcsAssigned: "DCS",
+};
+
 export function validateSelection(
   candidate: DutySlot,
   selected: DutySlot[],
-  myDuties: Duty[]
+  myDuties: Duty[],
+  flagKey: keyof RoomDutyFlags
 ): SelectionValidation {
-  if (candidate.invigilatorAssigned) {
-    return { ok: false, reason: "This slot already has an invigilator assigned." };
+  if (candidate.flags[flagKey]) {
+    return {
+      ok: false,
+      reason: `This slot already has an ${ROLE_LABEL[flagKey]} assigned.`,
+    };
   }
 
   if (selected.some((s) => s.slotId === candidate.slotId)) {

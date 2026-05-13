@@ -35,7 +35,7 @@ export default function InvigilatorExamCard({
 
   return (
     <Link
-      to={`/invigilator/exams/${group._id}`}
+      to={group._id}
       className="group relative flex flex-col rounded-xl border border-gray-200 bg-white p-5 transition-all hover:border-gray-300 hover:shadow-md"
     >
       <div className="flex items-start justify-between">

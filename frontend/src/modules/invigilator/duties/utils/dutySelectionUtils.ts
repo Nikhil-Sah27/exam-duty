@@ -1,4 +1,5 @@
 import type { Duty } from "@/modules/duties/types";
+import type { RoomDutyFlags } from "@/modules/shared/exams/types/exam.types";
 
 export type DutySelectionState =
   | "AVAILABLE"
@@ -7,14 +8,17 @@ export type DutySelectionState =
   | "PENDING"
   | "CONFLICT";
 
+/**
+ * Identifies a room+time slot for selection purposes. The full RoomDutyFlags
+ * payload is carried so per-role occupancy can be checked without re-fetching.
+ */
 export interface SlotContext {
   date: string;
   startTime: string;
   endTime: string;
   roomNumber: string;
   roomId: string;
-  /** From duty-status backend — whether ANY teacher with role=invigilator already has this room/time. */
-  invigilatorAssigned: boolean;
+  flags: RoomDutyFlags;
 }
 
 function toMinutes(time: string): number {
@@ -49,11 +53,6 @@ export function isSelectedByMe(slot: SlotContext, myDuties: Duty[]): boolean {
   });
 }
 
-/**
- * Time-conflict check: does the user have ANY other active duty that overlaps
- * this slot's time window? Excludes the slot itself (so toggling doesn't
- * report a self-conflict).
- */
 export function hasTimeConflict(slot: SlotContext, myDuties: Duty[]): boolean {
   return myDuties.some((d) => {
     if (d.status !== "assigned") return false;
@@ -67,18 +66,22 @@ export function hasTimeConflict(slot: SlotContext, myDuties: Duty[]): boolean {
   });
 }
 
-/**
- * Reusable availability gate. Pure: caller passes the relevant context.
- * Pending support is plumbed but unused until the backend exposes a request
- * workflow.
- */
+/** True when the role-specific slot on this room is already occupied. */
+export function isRoleSlotFull(
+  slot: SlotContext,
+  flagKey: keyof RoomDutyFlags
+): boolean {
+  return Boolean(slot.flags[flagKey]);
+}
+
 export function isDutyAvailable(
   slot: SlotContext,
   myDuties: Duty[],
+  flagKey: keyof RoomDutyFlags,
   isPending: boolean = false
 ): boolean {
   if (isPending) return false;
-  if (slot.invigilatorAssigned) return false;
+  if (isRoleSlotFull(slot, flagKey)) return false;
   if (isSelectedByMe(slot, myDuties)) return false;
   if (hasTimeConflict(slot, myDuties)) return false;
   return true;
@@ -87,11 +90,12 @@ export function isDutyAvailable(
 export function deriveSelectionState(
   slot: SlotContext,
   myDuties: Duty[],
+  flagKey: keyof RoomDutyFlags,
   isPending: boolean = false
 ): DutySelectionState {
   if (isSelectedByMe(slot, myDuties)) return "SELECTED_BY_ME";
   if (isPending) return "PENDING";
-  if (slot.invigilatorAssigned) return "FULLY_OCCUPIED";
+  if (isRoleSlotFull(slot, flagKey)) return "FULLY_OCCUPIED";
   if (hasTimeConflict(slot, myDuties)) return "CONFLICT";
   return "AVAILABLE";
 }

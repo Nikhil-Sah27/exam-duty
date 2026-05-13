@@ -2,6 +2,7 @@ import type {
   ExamGroup,
   ExamGroupDetails,
   DutyStatusMap,
+  RoomDutyFlags,
 } from "../types/exam.types";
 
 export interface AvailableDutySlot {
@@ -19,7 +20,12 @@ export interface AvailableDutySlot {
   buildingName: string;
   capacity: number;
   departments: string[];
-  invigilatorAssigned: boolean;
+  /**
+   * Full per-role occupancy for this room+time. Role-aware consumers (e.g.
+   * the Select Duty page filtering "FULL" slots) read the appropriate key
+   * based on the logged-in user's role via @/modules/shared/role-config.
+   */
+  flags: RoomDutyFlags;
 }
 
 /** Keep only exam groups that aren't completed. */
@@ -42,7 +48,8 @@ interface BuildSlotsInput {
 /**
  * Derive duty slots from a single group's schedules + rooms + duty status.
  * One slot per (schedule × examRoom). Slots are emitted regardless of
- * occupancy; the caller filters out FULL via `slot.invigilatorAssigned`.
+ * occupancy; the caller filters out FULL based on the logged-in user's role
+ * (e.g. `slot.flags.invigilatorAssigned` for invigilators, `rsAssigned` for RS).
  *
  * Filtering rules applied here (per spec):
  *  - drop completed schedules (date strictly in the past)
@@ -65,7 +72,11 @@ export function selectDutySlotsForGroup({
     if (schedule.rooms.length === 0) continue;
 
     for (const examRoom of schedule.rooms) {
-      const flags = dutyStatus[examRoom._id];
+      const flags: RoomDutyFlags = dutyStatus[examRoom._id] || {
+        dcsAssigned: false,
+        rsAssigned: false,
+        invigilatorAssigned: false,
+      };
       slots.push({
         slotId: `${schedule._id}:${examRoom._id}`,
         scheduleId: schedule._id,
@@ -81,7 +92,7 @@ export function selectDutySlotsForGroup({
         buildingName: examRoom.room.building?.name || "Unknown",
         capacity: examRoom.room.capacity,
         departments: examRoom.departments,
-        invigilatorAssigned: flags?.invigilatorAssigned ?? false,
+        flags,
       });
     }
   }

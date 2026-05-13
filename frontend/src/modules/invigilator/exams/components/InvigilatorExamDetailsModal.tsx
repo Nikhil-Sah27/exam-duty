@@ -9,6 +9,8 @@ import {
   getStatusLabel,
   getStatusColors,
 } from "@/modules/shared/exams/utils/dutyStatusUtils";
+import { useAuthStore } from "@/shared/store/auth.store";
+import { getRoleConfig } from "@/modules/shared/role-config/roleConfig";
 import { useDutySelection } from "@/modules/invigilator/duties/hooks/useDutySelection";
 import DutySelectionStatus from "@/modules/invigilator/duties/components/DutySelectionStatus";
 import DutySelectionButton from "@/modules/invigilator/duties/components/DutySelectionButton";
@@ -58,13 +60,19 @@ function RoleBadge({ label, assigned }: { label: string; assigned: boolean }) {
   );
 }
 
-/** Interactive row for the Invigilator role — supports selecting the duty. */
-function InvigilatorRoleRow({
+/**
+ * Interactive row for the role the logged-in user owns. The label is supplied
+ * by the caller (e.g. "Invigilator" or "RS (Room Superintendent)") so the
+ * same row works for both operational roles.
+ */
+function InteractiveRoleRow({
+  label,
   onSelect,
   state,
   isSubmitting,
   errorMessage,
 }: {
+  label: string;
   onSelect: () => void;
   state: ReturnType<typeof useDutySelection>["state"];
   isSubmitting: boolean;
@@ -73,7 +81,7 @@ function InvigilatorRoleRow({
   return (
     <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-gray-700">Invigilator</span>
+        <span className="text-sm font-medium text-gray-700">{label}</span>
 
         {state === "AVAILABLE" ? (
           <DutySelectionButton onClick={onSelect} isSubmitting={isSubmitting} />
@@ -81,7 +89,6 @@ function InvigilatorRoleRow({
           <DutySelectionStatus state={state} />
         )}
       </div>
-      {/* Helper text below — explains why the user can't act in non-available states */}
       {state === "CONFLICT" && (
         <p className="mt-2 text-[11px] text-orange-600">
           You already selected another duty during this time slot.
@@ -108,10 +115,13 @@ export default function InvigilatorExamDetailsModal({
   status,
   isMine,
 }: InvigilatorExamDetailsModalProps) {
+  const user = useAuthStore((s) => s.user);
+  const roleConfig = getRoleConfig(user?.role);
+
   const { room, departments } = assignment;
   const buildingName = room.building?.name || "Unknown";
   const colors = getStatusColors(status);
-  const flags = dutyFlags || {
+  const flags: RoomDutyFlags = dutyFlags || {
     dcsAssigned: false,
     rsAssigned: false,
     invigilatorAssigned: false,
@@ -125,7 +135,7 @@ export default function InvigilatorExamDetailsModal({
     endTime: schedule.endTime,
     roomNumber: room.roomNumber,
     roomId: room._id,
-    invigilatorAssigned: flags.invigilatorAssigned,
+    flags,
   };
 
   const dutySelection = useDutySelection(slot);
@@ -176,7 +186,9 @@ export default function InvigilatorExamDetailsModal({
                 <UserCheck className="h-4 w-4" />
                 <span className="text-sm font-bold">Your Duty Selected</span>
               </div>
-              <p className="mt-1 text-xs text-blue-600">Role: Invigilator</p>
+              <p className="mt-1 text-xs text-blue-600">
+                Role: {roleConfig?.roleLabel ?? "Invigilator"}
+              </p>
             </div>
           )}
 
@@ -217,17 +229,40 @@ export default function InvigilatorExamDetailsModal({
               Duty Assignments
             </p>
             <div className="space-y-2">
+              {/* DCS is always static — no operational role owns it from a dashboard. */}
               <RoleBadge
                 label="DCS (Deputy Chief Superintendent)"
                 assigned={flags.dcsAssigned}
               />
-              <RoleBadge label="RS (Room Superintendent)" assigned={flags.rsAssigned} />
-              <InvigilatorRoleRow
-                onSelect={handleSelect}
-                state={dutySelection.state}
-                isSubmitting={dutySelection.isSubmitting}
-                errorMessage={dutySelection.errorMessage}
-              />
+
+              {/* RS row: interactive if the logged-in user is RS, otherwise static. */}
+              {roleConfig?.roleKey === "rs" ? (
+                <InteractiveRoleRow
+                  label="RS (Room Superintendent)"
+                  onSelect={handleSelect}
+                  state={dutySelection.state}
+                  isSubmitting={dutySelection.isSubmitting}
+                  errorMessage={dutySelection.errorMessage}
+                />
+              ) : (
+                <RoleBadge
+                  label="RS (Room Superintendent)"
+                  assigned={flags.rsAssigned}
+                />
+              )}
+
+              {/* Invigilator row: interactive if the logged-in user is an Invigilator. */}
+              {roleConfig?.roleKey === "invigilator" ? (
+                <InteractiveRoleRow
+                  label="Invigilator"
+                  onSelect={handleSelect}
+                  state={dutySelection.state}
+                  isSubmitting={dutySelection.isSubmitting}
+                  errorMessage={dutySelection.errorMessage}
+                />
+              ) : (
+                <RoleBadge label="Invigilator" assigned={flags.invigilatorAssigned} />
+              )}
             </div>
           </div>
         </div>
