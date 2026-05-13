@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight, Calendar, Clock } from "lucide-react";
 import type { SlotAllocation, BuildingGrouped, RoomInfo, SeatSharingPlanItem } from "../../types";
 import { formatDate } from "../../utils/dateUtils";
-import { getSlotEffectiveSummary } from "../../utils/allocationSummary";
+import { getSlotEffectiveSummary } from "../../selectors/allocationSelectors";
 import DepartmentAllocationCard from "./DepartmentAllocationCard";
 
 interface SlotCardProps {

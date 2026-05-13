@@ -7,7 +7,7 @@ const POPULATE_FIELDS = [
   { path: "reviewedBy", select: "name email" },
 ];
 
-// Deep populate: duty → exam
+// Deep populate: duty → exam, plus move-request target refs
 const POPULATE_DEEP = [
   {
     path: "duty",
@@ -17,6 +17,21 @@ const POPULATE_DEEP = [
   { path: "requestedBy", select: "name email department" },
   { path: "swapWith", select: "name email department" },
   { path: "reviewedBy", select: "name email" },
+  // Move-request target. The schedule + examRoom let the UI show full slot context.
+  {
+    path: "requestedSchedule",
+    select: "date startTime endTime examGroup",
+    populate: { path: "examGroup", select: "examType semester" },
+  },
+  {
+    path: "requestedExamRoom",
+    select: "room departments",
+    populate: {
+      path: "room",
+      select: "roomNumber floor capacity building",
+      populate: { path: "building", select: "name" },
+    },
+  },
 ];
 
 const create = (data) => {

@@ -57,11 +57,19 @@ export default function DutyTable({ onAssignClick }: DutyTableProps) {
                 <tr key={duty._id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
                     <div className="font-medium text-gray-900">
-                      {duty.exam.name}
+                      {duty.exam?.name ?? duty.examSchedule?.examGroup
+                        ? `${duty.examSchedule?.examGroup?.examType ?? ""} Sem ${duty.examSchedule?.examGroup?.semester ?? ""}`.trim()
+                        : "—"}
                     </div>
-                    <div className="text-xs text-gray-400">
-                      {duty.exam.department} — Sem {duty.exam.semester}
-                    </div>
+                    {duty.exam ? (
+                      <div className="text-xs text-gray-400">
+                        {duty.exam.department} — Sem {duty.exam.semester}
+                      </div>
+                    ) : duty.examRoom?.departments?.length ? (
+                      <div className="text-xs text-gray-400">
+                        {duty.examRoom.departments.join(", ")}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3">
                     <div className="text-gray-900">{duty.teacher.name}</div>

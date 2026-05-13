@@ -2,7 +2,7 @@ import { useState } from "react";
 import { CheckCircle2, Minus, Plus } from "lucide-react";
 import Modal from "@/shared/components/Modal";
 import type { UnusedSeatInfo, SeatSharingPlanItem } from "../../types";
-import { groupSeatsByDept } from "../../utils/allocationSummary";
+import { groupSeatsByDept } from "../../selectors/allocationSelectors";
 
 interface SeatSharingModalProps {
   open: boolean;

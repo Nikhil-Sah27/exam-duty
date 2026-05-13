@@ -2,7 +2,7 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import Button from "@/shared/components/Button";
 import type { DepartmentData, RoutineEntry, Shift } from "../../types";
 import { formatDate } from "../../utils/dateUtils";
-import { isCourseAssigned } from "../../utils/examUtils";
+import { isCourseAssigned } from "../../selectors/routineSelectors";
 
 interface RoutineStepProps {
   routine: RoutineEntry[];

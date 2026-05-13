@@ -12,8 +12,9 @@ import {
 import Button from "@/shared/components/Button";
 import { useCIERooms } from "../../hooks";
 import type { SlotAllocation, UsedRoomsMap, RoomInfo, SeatSharingPlanItem } from "../../types";
-import { getSlotKey } from "../../utils/roomAllocation";
-import { getGlobalAllocationStats } from "../../utils/allocationSummary";
+import { getSlotKey } from "../../services/roomAllocation";
+import { getGlobalAllocationStats } from "../../selectors/allocationSelectors";
+import { getDisabledRoomsBySlot } from "../../selectors/roomAssignSelectors";
 import SlotCard from "../room-assignment/SlotCard";
 
 interface RoomAssignStepProps {
@@ -45,15 +46,10 @@ export default function RoomAssignStep({
 }: RoomAssignStepProps) {
   const { data: buildings = [], isLoading } = useCIERooms();
 
-  // Build disabled room sets per slot
-  const disabledBySlot = useMemo(() => {
-    const map = new Map<string, Set<string>>();
-    for (const slot of slotAllocations) {
-      const key = getSlotKey(slot.date, slot.shiftIndex);
-      map.set(key, new Set(usedRoomsMap[key] || []));
-    }
-    return map;
-  }, [slotAllocations, usedRoomsMap]);
+  const disabledBySlot = useMemo(
+    () => getDisabledRoomsBySlot(slotAllocations, usedRoomsMap),
+    [slotAllocations, usedRoomsMap]
+  );
 
   // All business-logic derived from utils — component only handles presentation
   const globalStats = useMemo(
@@ -65,9 +61,7 @@ export default function RoomAssignStep({
     return <p className="py-10 text-center text-sm text-gray-400">Loading rooms...</p>;
   }
 
-  const globalPct = globalStats.totalStudents > 0
-    ? Math.min(100, Math.round((globalStats.totalCapacity / globalStats.totalStudents) * 100))
-    : 0;
+  const globalPct = globalStats.progressPct;
 
   return (
     <div className="space-y-6">

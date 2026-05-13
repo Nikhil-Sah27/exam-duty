@@ -35,4 +35,12 @@ const reject = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data: request });
 });
 
-module.exports = { submit, getAll, getById, getMine, approve, reject };
+const getReplacements = catchAsync(async (req, res) => {
+  const slots = await changeRequestService.getAvailableReplacements(
+    req.params.dutyId,
+    req.user.id
+  );
+  res.status(200).json({ success: true, count: slots.length, data: slots });
+});
+
+module.exports = { submit, getAll, getById, getMine, approve, reject, getReplacements };

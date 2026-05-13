@@ -2,7 +2,7 @@ import { AlertTriangle, XCircle } from "lucide-react";
 import Input from "@/shared/components/Input";
 import AutoDateButton from "./AutoDateButton";
 import { formatDate } from "../utils/dateUtils";
-import type { DateInfo } from "../utils/examUtils";
+import type { DateInfo } from "../services/examScheduling";
 
 interface DateSectionProps {
   startDate: string;

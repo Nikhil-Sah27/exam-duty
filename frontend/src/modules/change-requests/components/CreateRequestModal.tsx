@@ -103,7 +103,7 @@ export default function CreateRequestModal({
             <option value="">Select a duty...</option>
             {myDuties.map((d) => (
               <option key={d._id} value={d._id}>
-                {d.exam.name} — {d.room} — {formatDate(d.date)}
+                {(d.exam?.name ?? "Duty")} — {d.room} — {formatDate(d.date)}
               </option>
             ))}
           </select>

@@ -1,5 +1,5 @@
 import { BookOpen, Layers, CalendarDays, Grid3X3, Sparkles } from "lucide-react";
-import type { ExamStats } from "../utils/examUtils";
+import type { ExamStats } from "../services/examScheduling";
 
 interface StatsBarProps {
   stats: ExamStats;

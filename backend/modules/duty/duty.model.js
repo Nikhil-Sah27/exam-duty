@@ -2,10 +2,24 @@ const mongoose = require("mongoose");
 
 const dutySchema = new mongoose.Schema(
   {
+    // Legacy reference to the single-exam model. Optional now — duties created
+    // from the new ExamGroup/ExamSchedule flow set `examSchedule` + `examRoom`
+    // instead. Validation that at least one path is present lives in the
+    // service layer, since Mongoose doesn't express OR-required cleanly.
     exam: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Exam",
-      required: [true, "Exam is required"],
+      default: null,
+    },
+    examSchedule: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ExamSchedule",
+      default: null,
+    },
+    examRoom: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ExamRoom",
+      default: null,
     },
     teacher: {
       type: mongoose.Schema.Types.ObjectId,

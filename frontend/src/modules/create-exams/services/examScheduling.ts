@@ -1,5 +1,5 @@
 import type { DepartmentData, Shift, RoutineEntry } from "../types";
-import { generateExamDates, generateDatesBetween } from "./dateUtils";
+import { generateExamDates, generateDatesBetween } from "../utils/dateUtils";
 
 // ---------- Core Stats ----------
 
@@ -116,71 +116,3 @@ export function buildEmptyRoutine(
   return routine;
 }
 
-/**
- * Check if a course is already assigned in the routine for a department.
- */
-export function isCourseAssigned(
-  routine: RoutineEntry[],
-  departmentId: string,
-  courseId: string
-): boolean {
-  return routine.some((entry) => entry.assignments[departmentId] === courseId);
-}
-
-/**
- * Get validation warnings for the routine.
- */
-export function getRoutineWarnings(
-  routine: RoutineEntry[],
-  departments: DepartmentData[]
-): string[] {
-  const warnings: string[] = [];
-
-  for (const dept of departments) {
-    const assignedCourses = routine
-      .map((e) => e.assignments[dept._id])
-      .filter(Boolean);
-
-    const unassigned = dept.courses.filter(
-      (c) => !assignedCourses.includes(c._id)
-    );
-
-    if (unassigned.length > 0) {
-      warnings.push(
-        `${dept.code}: ${unassigned.length} course(s) not assigned — ${unassigned.map((c) => c.code).join(", ")}`
-      );
-    }
-  }
-
-  const emptySlots = routine.filter((entry) =>
-    Object.values(entry.assignments).every((v) => !v)
-  );
-  if (emptySlots.length > 0) {
-    warnings.push(`${emptySlots.length} slot(s) have no courses assigned`);
-  }
-
-  return warnings;
-}
-
-// ---------- Room helpers ----------
-
-/**
- * Calculate remaining capacity for room assignment.
- */
-export function calculateRemaining(
-  totalStudents: number,
-  selectedCapacity: number
-): number {
-  return totalStudents - selectedCapacity;
-}
-
-/**
- * Calculate classes needed for remaining students.
- */
-export function classesNeeded(
-  remaining: number,
-  avgStudentsPerClass: number
-): number {
-  if (remaining <= 0 || avgStudentsPerClass <= 0) return 0;
-  return Math.ceil(remaining / avgStudentsPerClass);
-}

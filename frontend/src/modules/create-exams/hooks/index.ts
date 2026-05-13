@@ -5,7 +5,7 @@ import {
   fetchCIERooms,
   createCIEPlan,
   assignCIERooms,
-} from "../services";
+} from "../api";
 import type { CreatePlanPayload, AssignRoomsPayload } from "../types";
 
 const CREATE_EXAMS_KEY = ["create-exams"];

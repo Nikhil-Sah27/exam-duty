@@ -5,7 +5,13 @@ import type {
   CreatePlanPayload,
   AssignRoomsPayload,
   ApiResponse,
+  CreateExamsStatusResponse,
 } from "../types";
+
+export const fetchCreateExamsStatus = async (): Promise<string> => {
+  const res = await api.get<CreateExamsStatusResponse>("/create-exams");
+  return res.data.message;
+};
 
 export const fetchDepartmentsData = async (
   departmentIds: string[],

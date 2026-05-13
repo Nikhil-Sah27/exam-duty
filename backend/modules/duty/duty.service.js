@@ -1,8 +1,11 @@
-const mongoose = require("mongoose");
 const AppError = require("../../shared/utils/AppError");
+const { withOptionalTransaction } = require("../../shared/utils/withOptionalTransaction");
 const dutyRepository = require("./duty.repository");
 const Exam = require("../exam/exam.model");
 const User = require("../auth/auth.model");
+const examScheduleRepo = require("../exam/examSchedule.repository");
+const examRoomRepo = require("../exam/examRoom.repository");
+const examGroupRepo = require("../exam/examGroup.repository");
 const { emit } = require("../notification/notification.emitter");
 
 // ---------- Conflict validation ----------
@@ -37,6 +40,37 @@ const validateExam = async (examId) => {
   return exam;
 };
 
+/**
+ * Validate a slot identified by (ExamSchedule._id, ExamRoom._id). Returns the
+ * resolved schedule + examRoom (room populated). Throws if any link is broken
+ * or the group is already completed.
+ */
+const validateScheduleSlot = async (scheduleId, examRoomId) => {
+  if (!scheduleId) throw new AppError("examSchedule is required", 400);
+  if (!examRoomId) throw new AppError("examRoom is required", 400);
+
+  const [schedule, examRoom] = await Promise.all([
+    examScheduleRepo.findById(scheduleId),
+    examRoomRepo.findById(examRoomId),
+  ]);
+
+  if (!schedule) throw new AppError("Exam schedule not found", 404);
+  if (!examRoom) throw new AppError("Exam room assignment not found", 404);
+  if (examRoom.schedule.toString() !== scheduleId.toString()) {
+    throw new AppError("Exam room does not belong to the given schedule", 400);
+  }
+
+  const group = await examGroupRepo.findById(schedule.examGroup);
+  if (group) {
+    const now = new Date();
+    if (new Date(group.endDate) < now) {
+      throw new AppError("Cannot assign duty — exam group is already completed", 400);
+    }
+  }
+
+  return { schedule, examRoom };
+};
+
 const validateTeacher = async (teacherId) => {
   const teacher = await User.findById(teacherId);
   if (!teacher) throw new AppError("Teacher not found", 404);
@@ -52,41 +86,80 @@ const validateTimeRange = (startTime, endTime) => {
 
 // ---------- Service methods ----------
 
-const assignDuty = async ({ exam: examId, teacher: teacherId, room, date, startTime, endTime }, assignedById, isSelfAssigned) => {
+/**
+ * Two accepted payload shapes:
+ *
+ *  Legacy:  { exam, teacher, room, date, startTime, endTime }
+ *           — used by older Controller flows that still reference Exam._id.
+ *  New:     { examSchedule, examRoom, teacher }
+ *           — used by the Invigilator self-assign flow built on the
+ *             ExamGroup → ExamSchedule → ExamRoom domain. `room`, `date`,
+ *             `startTime`, `endTime` are derived from the resolved schedule
+ *             + examRoom and do not need to be sent.
+ */
+const assignDuty = async (data, assignedById, isSelfAssigned) => {
+  const { exam: examId, examSchedule, examRoom, teacher: teacherId } = data;
+
+  let scheduleRef = null;
+  let examRoomRef = null;
+  let room = data.room;
+  let date = data.date;
+  let startTime = data.startTime;
+  let endTime = data.endTime;
+
+  if (examSchedule || examRoom) {
+    // New shape: ScheduleSlot path
+    const resolved = await validateScheduleSlot(examSchedule, examRoom);
+    scheduleRef = resolved.schedule._id;
+    examRoomRef = resolved.examRoom._id;
+    room = resolved.examRoom?.room?.roomNumber || "";
+    date = resolved.schedule.date;
+    startTime = resolved.schedule.startTime;
+    endTime = resolved.schedule.endTime;
+  } else if (examId) {
+    // Legacy shape: Exam path
+    await validateExam(examId);
+  } else {
+    throw new AppError(
+      "Either {examSchedule, examRoom} or {exam} must be provided",
+      400
+    );
+  }
+
   validateTimeRange(startTime, endTime);
-  await validateExam(examId);
   await validateTeacher(teacherId);
   await validateConflicts(teacherId, room, date, startTime, endTime);
 
-  const session = await mongoose.startSession();
-  try {
-    session.startTransaction();
-
-    const duty = await dutyRepository.create(
-      { exam: examId, teacher: teacherId, room, date, startTime, endTime, assignedBy: assignedById, isSelfAssigned },
+  const duty = await withOptionalTransaction((session) =>
+    dutyRepository.create(
+      {
+        exam: examId || null,
+        examSchedule: scheduleRef,
+        examRoom: examRoomRef,
+        teacher: teacherId,
+        room,
+        date,
+        startTime,
+        endTime,
+        assignedBy: assignedById,
+        isSelfAssigned,
+      },
       session
-    );
+    )
+  );
 
-    await session.commitTransaction();
+  const populated = await dutyRepository.findById(duty._id);
 
-    const populated = await dutyRepository.findById(duty._id);
-
-    if (!isSelfAssigned) {
-      emit("duty_assigned", {
-        recipient: teacherId,
-        refModel: "Duty",
-        refId: duty._id,
-        data: { room, date, startTime, endTime },
-      });
-    }
-
-    return populated;
-  } catch (error) {
-    await session.abortTransaction();
-    throw error;
-  } finally {
-    session.endSession();
+  if (!isSelfAssigned) {
+    emit("duty_assigned", {
+      recipient: teacherId,
+      refModel: "Duty",
+      refId: duty._id,
+      data: { room, date, startTime, endTime },
+    });
   }
+
+  return populated;
 };
 
 const selfAssignDuty = async (data, userId) => {

@@ -7,9 +7,12 @@ import RoutineStep from "../components/steps/RoutineStep";
 import SummaryStep from "../components/steps/SummaryStep";
 import RoomAssignStep from "../components/steps/RoomAssignStep";
 import { useExamCreation, useCreateCIEPlan, useAssignCIERooms } from "../hooks";
-import type { CreatePlanPayload, AssignRoomsPayload } from "../types";
-import { calculateCapacity } from "../utils/roomAllocation";
-import { getEffectiveCapacity } from "../utils/seatSharing";
+import type { CreatePlanPayload } from "../types";
+import { getGlobalAllocationStats } from "../selectors/allocationSelectors";
+import {
+  mapRoutineToScheduleIds,
+  buildAssignRoomsPayload,
+} from "../services/payloadBuilders";
 
 export default function CIEPage() {
   const exam = useExamCreation();
@@ -33,21 +36,8 @@ export default function CIEPage() {
     createPlan.mutate(payload, {
       onSuccess: (data: any) => {
         exam.setPlanId(data._id || null);
-
-        // Use real schedule IDs from backend response
         const scheduleMapping: Record<string, string> = data.scheduleMapping || {};
-
-        // Build ordered list of real schedule IDs matching unique routine slots
-        const seen = new Set<string>();
-        const scheduleIds: string[] = [];
-        exam.routine.forEach((entry) => {
-          const key = `${entry.date}|${entry.shiftIndex}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            scheduleIds.push(scheduleMapping[key] || key);
-          }
-        });
-
+        const scheduleIds = mapRoutineToScheduleIds(exam.routine, scheduleMapping);
         exam.initSlotAllocations(scheduleIds);
         exam.nextStep();
       },
@@ -58,34 +48,7 @@ export default function CIEPage() {
   };
 
   const handleAssignRooms = () => {
-    // Build department-aware assignments payload (including shared seats)
-    const assignments: AssignRoomsPayload["assignments"] = [];
-
-    for (const slot of exam.slotAllocations) {
-      for (const dept of slot.departments) {
-        if (!dept.courseId) continue;
-
-        // Primary room assignments
-        for (const room of dept.assignedRooms) {
-          assignments.push({
-            scheduleId: slot.scheduleId,
-            roomId: room._id,
-            departmentCode: dept.departmentCode,
-          });
-        }
-
-        // Shared seat assignments (received from other depts)
-        for (const share of dept.sharedSeatsReceived) {
-          assignments.push({
-            scheduleId: slot.scheduleId,
-            roomId: share.roomId,
-            departmentCode: dept.departmentCode,
-            students: share.sharedStudents,
-            isShared: true,
-          });
-        }
-      }
-    }
+    const assignments = buildAssignRoomsPayload(exam.slotAllocations);
 
     if (assignments.length === 0) {
       setSuccess(true);
@@ -96,30 +59,16 @@ export default function CIEPage() {
   };
 
   if (success) {
-    // Compute summary stats from the allocations at the time of submission
-    let totalRooms = 0;
-    let totalStudents = 0;
-    let totalCapacity = 0;
-    let totalSharedSeats = 0;
-    let deptsCovered = 0;
-    let deptsTotal = 0;
-
-    for (const slot of exam.slotAllocations) {
-      for (const dept of slot.departments) {
-        if (!dept.courseId) continue;
-        deptsTotal++;
-        totalRooms += dept.assignedRooms.length;
-        totalStudents += dept.students;
-        const effCap = getEffectiveCapacity(dept);
-        totalCapacity += effCap;
-        totalSharedSeats += dept.sharedSeatsReceived.reduce((s, r) => s + r.sharedStudents, 0);
-        if (effCap >= dept.students) deptsCovered++;
-      }
-    }
-
-    const totalSlots = exam.slotAllocations.filter(
-      (s) => s.departments.some((d) => d.courseId)
-    ).length;
+    const stats = getGlobalAllocationStats(exam.slotAllocations);
+    const {
+      totalRoomsAssigned: totalRooms,
+      totalStudents,
+      totalCapacity,
+      totalSharedSeats,
+      deptsCovered,
+      deptsTotal,
+      slotsTotal: totalSlots,
+    } = stats;
 
     return (
       <div className="mx-auto max-w-lg space-y-6 py-8">

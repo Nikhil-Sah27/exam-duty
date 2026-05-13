@@ -4,6 +4,20 @@ const POPULATE_FIELDS = [
   { path: "exam", select: "name date department semester type" },
   { path: "teacher", select: "name email department" },
   { path: "assignedBy", select: "name email" },
+  {
+    path: "examSchedule",
+    select: "date startTime endTime examGroup",
+    populate: { path: "examGroup", select: "examType semester" },
+  },
+  {
+    path: "examRoom",
+    select: "room departments",
+    populate: {
+      path: "room",
+      select: "roomNumber floor capacity building",
+      populate: { path: "building", select: "name" },
+    },
+  },
 ];
 
 const create = (data, session) => {

@@ -82,7 +82,12 @@
       "Bash(powershell.exe -Command \"& 'C:\\\\Program Files\\\\MongoDB\\\\Server\\\\*\\\\bin\\\\mongosh.exe' --quiet --eval 'db.users.find\\({role:\\\\\"cs\\\\\"},{name:1,email:1,role:1,isActive:1}\\).toArray\\(\\)' exam-duty\" 2>&1)",
       "Bash(powershell.exe -Command \"Get-ChildItem 'C:\\\\Program Files\\\\MongoDB' -Recurse -Filter 'mongosh.exe' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName\" 2>&1)",
       "Bash(powershell.exe -Command \"Get-NetTCPConnection -LocalPort 5000 -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess\" 2>&1)",
-      "Bash(powershell.exe -Command \"\\(Get-NetTCPConnection -LocalPort 5000 -ErrorAction SilentlyContinue | Where-Object { \\\\$_.OwningProcess -ne 0 }\\).OwningProcess\" 2>&1)"
+      "Bash(powershell.exe -Command \"\\(Get-NetTCPConnection -LocalPort 5000 -ErrorAction SilentlyContinue | Where-Object { \\\\$_.OwningProcess -ne 0 }\\).OwningProcess\" 2>&1)",
+      "Bash(echo \"---EXIT $?---\")",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\)['data']; print\\('schedules:', len\\(d.get\\('schedules',[]\\)\\)\\); s=d.get\\('schedules',[None]\\)[0]; print\\('first schedule:', s and s.get\\('_id'\\), s and s.get\\('startTime'\\), s and s.get\\('endTime'\\)\\); rooms=s and s.get\\('rooms'\\) or []; print\\('rooms in first schedule:', len\\(rooms\\)\\); r=rooms and rooms[0] or None; print\\('first examRoom:', r and r.get\\('_id'\\), 'room.no:', r and r.get\\('room',{}\\).get\\('roomNumber'\\)\\)\")",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\)['data']; print\\('schedules:', len\\(d.get\\('schedules',[]\\)\\)\\); [print\\('  sched',i,s['_id'],s['startTime'],'-',s['endTime'],'rooms=',len\\(s.get\\('rooms',[]\\)\\)\\) for i,s in enumerate\\(d.get\\('schedules',[]\\)\\)]; s=next\\(\\(x for x in d.get\\('schedules',[]\\) if x.get\\('rooms'\\)\\),None\\); r=s and s['rooms'][0] or None; print\\('--- example with rooms ---'\\); print\\('schedule:', s and s['_id']\\); print\\('examRoom:', r and r['_id']\\); print\\('room:', r and r.get\\('room',{}\\).get\\('roomNumber'\\)\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(python -m json.tool)"
     ]
   }
 }

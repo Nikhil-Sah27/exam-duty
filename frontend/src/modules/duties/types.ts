@@ -1,5 +1,10 @@
 export type DutyStatus = "assigned" | "completed" | "cancelled";
 
+/**
+ * A Duty references EITHER the legacy `exam` model OR the new
+ * `examSchedule` + `examRoom` pair (introduced for the ExamGroup-based flow).
+ * Both are populated lazily — consumers should be defensive.
+ */
 export interface Duty {
   _id: string;
   exam: {
@@ -9,7 +14,29 @@ export interface Duty {
     department: string;
     semester: number;
     type: string;
-  };
+  } | null;
+  examSchedule: {
+    _id: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    examGroup?: {
+      _id: string;
+      examType: string;
+      semester: number;
+    };
+  } | null;
+  examRoom: {
+    _id: string;
+    departments: string[];
+    room?: {
+      _id: string;
+      roomNumber: string;
+      floor: number;
+      capacity: number;
+      building?: { _id: string; name: string };
+    };
+  } | null;
   teacher: {
     _id: string;
     name: string;
@@ -33,12 +60,19 @@ export interface Duty {
   updatedAt: string;
 }
 
+/**
+ * Two acceptable shapes:
+ *  - Legacy: { exam, room, date, startTime, endTime }
+ *  - New:    { examSchedule, examRoom } — room/date/time derived server-side.
+ */
 export interface SelfAssignRequest {
-  exam: string;
-  room: string;
-  date: string;
-  startTime: string;
-  endTime: string;
+  exam?: string;
+  examSchedule?: string;
+  examRoom?: string;
+  room?: string;
+  date?: string;
+  startTime?: string;
+  endTime?: string;
 }
 
 export interface AdminAssignRequest extends SelfAssignRequest {

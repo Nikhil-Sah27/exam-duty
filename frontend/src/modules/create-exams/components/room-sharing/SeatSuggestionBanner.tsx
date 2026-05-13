@@ -1,6 +1,6 @@
 import { Share2 } from "lucide-react";
 import type { UnusedSeatInfo } from "../../types";
-import { getSeatSuggestionInfo } from "../../utils/allocationSummary";
+import { getSeatSuggestionInfo } from "../../selectors/allocationSelectors";
 
 interface SeatSuggestionBannerProps {
   unusedSeats: UnusedSeatInfo[];

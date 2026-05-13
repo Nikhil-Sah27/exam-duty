@@ -20,17 +20,19 @@ export interface NavItem {
   roles?: UserRole[];
 }
 
+const ADMIN_ROLES: UserRole[] = ["cs", "dcs", "rs"];
+
 export const navItems: NavItem[] = [
-  { path: "/", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/create-exams", label: "Create Exams", icon: FilePlus },
-  { path: "/exams", label: "Exams", icon: FileText },
-  { path: "/requests", label: "Change Requests", icon: ArrowLeftRight },
-  { path: "/manage-duties", label: "Manage Duties", icon: ClipboardList },
-  { path: "/users", label: "Teachers", icon: Users },
-  { path: "/departments", label: "Departments", icon: Building2 },
-  { path: "/infrastructure", label: "Rooms & Buildings", icon: DoorOpen },
-  { path: "/reports", label: "Reports", icon: BarChart3 },
-  { path: "/audit", label: "Audit Log", icon: ScrollText },
+  { path: "/", label: "Dashboard", icon: LayoutDashboard, roles: ADMIN_ROLES },
+  { path: "/create-exams", label: "Create Exams", icon: FilePlus, roles: ADMIN_ROLES },
+  { path: "/exams", label: "Exams", icon: FileText, roles: ADMIN_ROLES },
+  { path: "/requests", label: "Change Requests", icon: ArrowLeftRight, roles: ADMIN_ROLES },
+  { path: "/manage-duties", label: "Manage Duties", icon: ClipboardList, roles: ADMIN_ROLES },
+  { path: "/users", label: "Teachers", icon: Users, roles: ADMIN_ROLES },
+  { path: "/departments", label: "Departments", icon: Building2, roles: ADMIN_ROLES },
+  { path: "/infrastructure", label: "Rooms & Buildings", icon: DoorOpen, roles: ADMIN_ROLES },
+  { path: "/reports", label: "Reports", icon: BarChart3, roles: ADMIN_ROLES },
+  { path: "/audit", label: "Audit Log", icon: ScrollText, roles: ADMIN_ROLES },
 ];
 
 export function getVisibleNavItems(role: UserRole | undefined): NavItem[] {

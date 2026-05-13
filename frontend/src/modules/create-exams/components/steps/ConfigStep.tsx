@@ -8,7 +8,7 @@ import ShiftManager from "../ShiftManager";
 import StatsBar from "../StatsBar";
 import DateSection from "../DateSection";
 import type { CIEConfig, DepartmentData, ExamType, Shift } from "../../types";
-import type { ExamStats, DateInfo } from "../../utils/examUtils";
+import type { ExamStats, DateInfo } from "../../services/examScheduling";
 
 interface ConfigStepProps {
   config: CIEConfig;

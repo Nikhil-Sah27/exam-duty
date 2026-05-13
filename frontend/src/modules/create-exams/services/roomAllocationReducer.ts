@@ -13,11 +13,11 @@ import {
   canAddRoom,
   addToUsedRooms,
   removeFromUsedRooms,
-} from "../utils/roomAllocation";
+} from "./roomAllocation";
 import {
   applySeatSharingToSlot,
   removeSeatSharingFromSlot,
-} from "../utils/seatSharing";
+} from "./seatSharing";
 
 // ──────────────────────────────────────────────
 // State shape

@@ -16,6 +16,7 @@ import ReportsPage from "@/modules/reports/components/ReportsPage";
 import AuditPage from "@/modules/audit/components/AuditPage";
 import ManageDutiesPage from "@/modules/manage-duties/components/ManageDutiesPage";
 import TeacherDetailsPage from "@/modules/manage-duties/components/TeacherDetailsPage";
+import { invigilatorRoutes } from "@/modules/invigilator/routes/invigilatorRoutes";
 
 export default function App() {
   return (
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/audit" element={<AuditPage />} />
       </Route>
+      {invigilatorRoutes}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

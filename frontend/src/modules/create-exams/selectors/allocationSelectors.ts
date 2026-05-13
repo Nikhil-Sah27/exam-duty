@@ -1,6 +1,6 @@
 import type { DepartmentAllocation, SlotAllocation, UnusedSeatInfo } from "../types";
-import { calculateCapacity, classesNeeded, getSlotSummary } from "./roomAllocation";
-import { getEffectiveCapacity, getEffectiveRemaining } from "./seatSharing";
+import { calculateCapacity, classesNeeded, getSlotSummary } from "../services/roomAllocation";
+import { getEffectiveCapacity, getEffectiveRemaining } from "../services/seatSharing";
 
 // ──────────────────────────────────────────────
 // Department-level display stats (derived, never stored)
@@ -139,6 +139,7 @@ export interface GlobalAllocationStats {
   deptsCovered: number;
   deptsTotal: number;
   allCovered: boolean;
+  progressPct: number;
 }
 
 export function getGlobalAllocationStats(
@@ -187,6 +188,11 @@ export function getGlobalAllocationStats(
     if (slotAllCovered) slotsCovered++;
   }
 
+  const progressPct =
+    totalStudents > 0
+      ? Math.min(100, Math.round((totalCapacity / totalStudents) * 100))
+      : 0;
+
   return {
     totalStudents,
     totalCapacity,
@@ -197,6 +203,7 @@ export function getGlobalAllocationStats(
     deptsCovered,
     deptsTotal,
     allCovered: totalCapacity >= totalStudents && totalStudents > 0,
+    progressPct,
   };
 }
 

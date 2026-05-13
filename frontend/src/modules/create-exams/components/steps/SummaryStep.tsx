@@ -10,6 +10,7 @@ import {
 import Button from "@/shared/components/Button";
 import type { CIEConfig, DepartmentData, RoutineEntry } from "../../types";
 import { formatDate } from "../../utils/dateUtils";
+import { getTotalExamsInRoutine } from "../../selectors/routineSelectors";
 
 interface SummaryStepProps {
   config: CIEConfig;
@@ -34,10 +35,7 @@ export default function SummaryStep({
   onCreatePlan,
   onPrev,
 }: SummaryStepProps) {
-  const totalExams = routine.reduce(
-    (sum, entry) => sum + Object.values(entry.assignments).filter(Boolean).length,
-    0
-  );
+  const totalExams = getTotalExamsInRoutine(routine);
 
   return (
     <div className="space-y-6">

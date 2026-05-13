@@ -7,8 +7,8 @@ import type {
   RoomInfo,
   SeatSharingPlanItem,
 } from "../../types";
-import { getUnusedSeatsInSlot } from "../../utils/seatSharing";
-import { getDeptDisplayStats } from "../../utils/allocationSummary";
+import { getUnusedSeatsInSlot } from "../../services/seatSharing";
+import { getDeptDisplayStats } from "../../selectors/allocationSelectors";
 import RoomChip from "./RoomChip";
 import RoomSelector from "./RoomSelector";
 import SharedRoomIndicator from "../room-sharing/SharedRoomIndicator";
