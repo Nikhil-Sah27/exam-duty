@@ -4,4 +4,5 @@ export {
   fetchCIERooms,
   createCIEPlan,
   assignCIERooms,
+  finalizeCIEExam,
 } from "./examApi";

@@ -1,12 +1,17 @@
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   fetchCreateExamsStatus,
   fetchDepartmentsData,
   fetchCIERooms,
   createCIEPlan,
   assignCIERooms,
+  finalizeCIEExam,
 } from "../api";
-import type { CreatePlanPayload, AssignRoomsPayload } from "../types";
+import type {
+  CreatePlanPayload,
+  AssignRoomsPayload,
+  FinalizeCIEPayload,
+} from "../types";
 
 const CREATE_EXAMS_KEY = ["create-exams"];
 const CIE_ROOMS_KEY = ["cie-rooms"];
@@ -29,5 +34,19 @@ export const useCreateCIEPlan = () =>
 
 export const useAssignCIERooms = () =>
   useMutation({ mutationFn: (data: AssignRoomsPayload) => assignCIERooms(data) });
+
+// Single-call transactional finalize — exam is only created when this fires.
+// Invalidates the exam-groups caches so the new exam appears immediately in
+// /exams without a manual refresh.
+export const useFinalizeCIEExam = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: FinalizeCIEPayload) => finalizeCIEExam(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["exam-groups"] });
+      qc.invalidateQueries({ queryKey: ["shared", "exam-groups"] });
+    },
+  });
+};
 
 export { useExamCreation } from "./useExamCreation";

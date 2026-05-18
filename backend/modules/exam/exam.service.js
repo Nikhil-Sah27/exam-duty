@@ -1,5 +1,6 @@
 const AppError = require("../../shared/utils/AppError");
 const examRepository = require("./exam.repository");
+const examDeletionService = require("../exam-cleanup/services/examDeletionService");
 
 const createExam = async (data, userId) => {
   return examRepository.create({ ...data, createdBy: userId });
@@ -49,15 +50,11 @@ const updateExam = async (id, data) => {
   return examRepository.updateById(id, data);
 };
 
-const cancelExam = async (id) => {
-  const exam = await examRepository.findById(id);
-  if (!exam) throw new AppError("Exam not found", 404);
-
-  if (exam.status === "completed") {
-    throw new AppError("Cannot cancel a completed exam", 400);
-  }
-
-  return examRepository.softDelete(id);
+// Delegates to the centralized cascade for the legacy single-Exam flow.
+// Releases all duties tied to this exam, cancels open change requests,
+// notifies teachers, audits — atomically.
+const cancelExam = async (id, actor = {}) => {
+  return examDeletionService.cancelExamWithCleanup(id, actor);
 };
 
 const restoreExam = async (id) => {

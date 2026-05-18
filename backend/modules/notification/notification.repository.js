@@ -1,11 +1,12 @@
 const Notification = require("./notification.model");
 
-const create = (data) => {
+const create = (data, session) => {
+  if (session) return Notification.create([data], { session }).then((d) => d[0]);
   return Notification.create(data);
 };
 
-const createMany = (docs) => {
-  return Notification.insertMany(docs);
+const createMany = (docs, session) => {
+  return Notification.insertMany(docs, session ? { session } : {});
 };
 
 const findByRecipient = (recipientId, filter = {}) => {

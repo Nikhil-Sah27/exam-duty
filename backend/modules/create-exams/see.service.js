@@ -1,10 +1,12 @@
 const ExamGroup = require("../exam/examGroup.model");
 const ExamSchedule = require("../exam/examSchedule.model");
+const ExamRoom = require("../exam/examRoom.model");
 const CIEPlanEntry = require("./ciePlan.model");
 const Course = require("../department/course.model");
 const Department = require("../department/department.model");
 const Semester = require("../department/semester.model");
 const AppError = require("../../shared/utils/AppError");
+const { withOptionalTransaction } = require("../../shared/utils/withOptionalTransaction");
 
 /**
  * Same time-overlap math used elsewhere in the codebase.
@@ -172,4 +174,173 @@ const createSEEPlan = async (data, userId) => {
   return { ...examGroup.toObject(), scheduleMapping };
 };
 
-module.exports = { createSEEPlan };
+// ---------------------------------------------------------------------------
+// Finalize (single-call transactional creation for SEE)
+//
+// Same contract as cie.service.finalizeCIEPlan: the frontend ships the full
+// draft (config + per-course schedules + room assignments) and we persist
+// ExamGroup, ExamSchedules, CIEPlanEntries (one dept per slot for SEE), and
+// ExamRooms inside one transaction. Frontend uses each schedule's
+// `localId` as the synthetic slotKey for room assignments.
+// ---------------------------------------------------------------------------
+
+const finalizeSEEPlan = async (data, userId) => {
+  const { departmentId, semester, schedules, roomAssignments } = data;
+
+  if (!departmentId) throw new AppError("Department is required", 400);
+  if (!semester) throw new AppError("Semester is required", 400);
+  validateSchedules(schedules);
+
+  if (!Array.isArray(roomAssignments) || roomAssignments.length === 0) {
+    throw new AppError("Room assignments are required before creating an exam", 400);
+  }
+
+  // Every schedule's slotKey must be present in roomAssignments.
+  const scheduleSlotKeys = new Set(schedules.map((s) => s.slotKey || s.localId));
+  const assignmentSlotKeys = new Set(roomAssignments.map((a) => a.scheduleId));
+  for (const key of scheduleSlotKeys) {
+    if (!key) {
+      throw new AppError("Every scheduled row must include a slotKey/localId", 400);
+    }
+    if (!assignmentSlotKeys.has(key)) {
+      throw new AppError(
+        "Cannot create exam until all schedules have rooms assigned.",
+        400,
+      );
+    }
+  }
+
+  const department = await Department.findById(departmentId);
+  if (!department) throw new AppError("Department not found", 404);
+
+  const semNumber = String(semester);
+  const pattern = "^(Sem(ester)?\\s*)?0?" + semNumber + "$";
+  const semesterRecord = await Semester.findOne({
+    department: departmentId,
+    $or: [
+      { name: semNumber },
+      { name: { $regex: new RegExp(pattern, "i") } },
+    ],
+  });
+  if (!semesterRecord) {
+    throw new AppError(`Semester ${semester} not found for this department`, 404);
+  }
+
+  // Cross-semester leakage guard.
+  const courseIds = schedules.map((s) => s.courseId);
+  const courses = await Course.find({
+    _id: { $in: courseIds },
+    semester: semesterRecord._id,
+  });
+  if (courses.length !== courseIds.length) {
+    throw new AppError(
+      "One or more courses do not belong to the selected department/semester",
+      400,
+    );
+  }
+
+  const dates = schedules.map((s) => new Date(s.date)).sort((a, b) => a - b);
+  const startDate = dates[0];
+  const endDate = dates[dates.length - 1];
+
+  const duplicate = await ExamGroup.findOne({
+    examType: "SEE",
+    semester: parseInt(semester, 10),
+    isActive: true,
+    $or: [{ startDate: { $lte: endDate }, endDate: { $gte: startDate } }],
+  });
+  if (duplicate) {
+    throw new AppError(
+      `A SEE exam for Semester ${semester} already exists with overlapping dates`,
+      409,
+    );
+  }
+
+  return withOptionalTransaction(async (session) => {
+    const sessionOpt = session ? { session } : {};
+
+    const [examGroup] = await ExamGroup.create(
+      [
+        {
+          examType: "SEE",
+          semester: parseInt(semester, 10),
+          startDate,
+          endDate,
+          createdBy: userId,
+        },
+      ],
+      sessionOpt,
+    );
+
+    const slotKeyToScheduleId = new Map();
+    for (const entry of schedules) {
+      const slotKey = entry.slotKey || entry.localId;
+      const [schedule] = await ExamSchedule.create(
+        [
+          {
+            examGroup: examGroup._id,
+            date: new Date(entry.date),
+            startTime: entry.startTime,
+            endTime: entry.endTime,
+          },
+        ],
+        sessionOpt,
+      );
+      slotKeyToScheduleId.set(slotKey, schedule._id);
+
+      await CIEPlanEntry.create(
+        [
+          {
+            examGroup: examGroup._id,
+            schedule: schedule._id,
+            department: departmentId,
+            course: entry.courseId,
+          },
+        ],
+        sessionOpt,
+      );
+    }
+
+    // Group room assignments by (schedule, room); merge departments.
+    const roomGroups = new Map();
+    for (const a of roomAssignments) {
+      const scheduleId = slotKeyToScheduleId.get(a.scheduleId);
+      if (!scheduleId) {
+        throw new AppError(
+          `Room assignment references unknown slot ${a.scheduleId}`,
+          400,
+        );
+      }
+      const key = `${scheduleId}|${a.roomId}`;
+      if (!roomGroups.has(key)) {
+        roomGroups.set(key, {
+          schedule: scheduleId,
+          room: a.roomId,
+          departments: new Set(),
+        });
+      }
+      roomGroups.get(key).departments.add(a.departmentCode);
+    }
+
+    for (const group of roomGroups.values()) {
+      await ExamRoom.create(
+        [
+          {
+            schedule: group.schedule,
+            room: group.room,
+            departments: Array.from(group.departments),
+          },
+        ],
+        sessionOpt,
+      );
+    }
+
+    return {
+      ...examGroup.toObject(),
+      schedulesCreated: slotKeyToScheduleId.size,
+      roomsCreated: roomGroups.size,
+    };
+  });
+};
+
+module.exports = { createSEEPlan, finalizeSEEPlan };

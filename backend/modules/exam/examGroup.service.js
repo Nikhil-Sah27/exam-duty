@@ -2,6 +2,7 @@ const AppError = require("../../shared/utils/AppError");
 const examGroupRepo = require("./examGroup.repository");
 const examScheduleRepo = require("./examSchedule.repository");
 const examRoomRepo = require("./examRoom.repository");
+const examDeletionService = require("../exam-cleanup/services/examDeletionService");
 
 const ExamGroup = require("./examGroup.model");
 const Duty = require("../duty/duty.model");
@@ -62,19 +63,10 @@ const updateGroup = async (id, data) => {
   return examGroupRepo.updateById(id, data);
 };
 
-const deleteGroup = async (id) => {
-  const group = await examGroupRepo.findById(id);
-  if (!group) throw new AppError("Exam group not found", 404);
-
-  // Clean up related schedules and rooms
-  const schedules = await examScheduleRepo.findByExamGroup(id);
-  const scheduleIds = schedules.map((s) => s._id);
-  if (scheduleIds.length > 0) {
-    await examRoomRepo.deleteBySchedules(scheduleIds);
-  }
-  await examScheduleRepo.deleteByExamGroup(id);
-
-  return examGroupRepo.softDelete(id);
+// Delegates to the centralized cascade so duties are released, change
+// requests cancelled, audit logged, and teachers notified — atomically.
+const deleteGroup = async (id, actor = {}) => {
+  return examDeletionService.deleteExamGroupWithCleanup(id, actor);
 };
 
 /**

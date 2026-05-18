@@ -1,4 +1,4 @@
-import type { ExamGroup, Duty } from "../types/exam.types";
+import type { ExamGroup, ExamGroupType, Duty } from "../types/exam.types";
 
 /**
  * Group exam groups by the canonical "examType + semester" key.
@@ -25,6 +25,36 @@ export function groupByExamType(groups: ExamGroup[]): Map<string, ExamGroup[]> {
     const bucket = out.get(g.examType);
     if (bucket) bucket.push(g);
     else out.set(g.examType, [g]);
+  }
+  return out;
+}
+
+/**
+ * Top-level split used by the Exams listing page:
+ *   { cie: { IA1, IA2, IA3 }, see }
+ *
+ * The CS landing UI renders CIE and SEE as distinct sections so they don't
+ * get visually mixed; this helper centralizes the bucketing so consumers
+ * don't reach into individual `examType` strings.
+ */
+export interface CategorizedExams<T extends ExamGroup = ExamGroup> {
+  cie: Record<Extract<ExamGroupType, "IA1" | "IA2" | "IA3">, T[]>;
+  see: T[];
+}
+
+export function groupExamsByCategory<T extends ExamGroup>(
+  groups: T[],
+): CategorizedExams<T> {
+  const out: CategorizedExams<T> = {
+    cie: { IA1: [], IA2: [], IA3: [] },
+    see: [],
+  };
+  for (const g of groups) {
+    if (g.examType === "SEE") {
+      out.see.push(g);
+    } else if (g.examType === "IA1" || g.examType === "IA2" || g.examType === "IA3") {
+      out.cie[g.examType].push(g);
+    }
   }
   return out;
 }

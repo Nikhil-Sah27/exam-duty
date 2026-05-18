@@ -22,8 +22,15 @@ const update = catchAsync(async (req, res) => {
 });
 
 const cancel = catchAsync(async (req, res) => {
-  await examService.cancelExam(req.params.id);
-  res.status(200).json({ success: true, message: "Exam cancelled" });
+  const summary = await examService.cancelExam(req.params.id, {
+    actorId: req.user.id,
+    ipAddress: req.ip,
+  });
+  res.status(200).json({
+    success: true,
+    message: "Exam cancelled",
+    data: summary,
+  });
 });
 
 const restore = catchAsync(async (req, res) => {

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   type RoomAllocationState,
@@ -10,52 +10,53 @@ import {
 } from "../../services/roomAllocationReducer";
 import { getRoomWarnings } from "../../selectors/roomAssignSelectors";
 import { buildAssignRoomsPayload } from "../../services/payloadBuilders";
-import { assignCIERooms } from "../../api/examApi";
+import { finalizeSEEExam } from "../services/seeExamService";
 import type {
   DepartmentData,
   SlotAllocation,
   RoomInfo,
   SeatSharingPlanItem,
 } from "../../types";
-import type { SEERoutineEntry, SEEPlanResponse } from "../types";
+import type { SEERoutineEntry } from "../types";
 import { buildSEESlotAllocations } from "../utils/seeTransformUtils";
 
 /**
- * Manages the SEE room-assignment phase by reusing the CIE roomAllocationReducer.
- * Initialised from the finished SEE routine + backend's scheduleMapping.
+ * Drives the SEE room-assignment phase. Reuses the CIE roomAllocationReducer
+ * for the slot state machine. The key change vs the old flow: nothing is
+ * persisted to the database during this phase — when the user clicks
+ * "Finish & Create Exam" we ship the entire draft (config + routine +
+ * room assignments) to `/see/finalize`, which creates everything in one
+ * transaction. If anything fails, nothing is persisted.
  */
 export function useSEERoomAssignment(args: {
+  departmentId: string;
+  semester: string;
   routine: SEERoutineEntry[];
   department: DepartmentData | null;
-  scheduleMapping: SEEPlanResponse["scheduleMapping"] | null;
   avgStudentsPerClass?: number;
 }) {
   const queryClient = useQueryClient();
   const avg = args.avgStudentsPerClass ?? 60;
 
   const initialSlots: SlotAllocation[] = useMemo(() => {
-    if (!args.department || !args.scheduleMapping) return [];
-    return buildSEESlotAllocations(
-      args.routine,
-      args.department,
-      args.scheduleMapping,
-      avg,
-    );
-  }, [args.routine, args.department, args.scheduleMapping, avg]);
+    if (!args.department) return [];
+    return buildSEESlotAllocations(args.routine, args.department, avg);
+  }, [args.routine, args.department, avg]);
 
   const [roomState, setRoomState] = useState<RoomAllocationState>({
     ...INITIAL_ROOM_STATE,
     slotAllocations: initialSlots,
   });
 
-  // Sync the slot list when routine/scheduleMapping change (e.g., once the
-  // backend Finish call returns and we have real scheduleIds).
-  if (
-    initialSlots.length > 0 &&
-    roomState.slotAllocations.length === 0
-  ) {
-    setRoomState({ ...INITIAL_ROOM_STATE, slotAllocations: initialSlots });
-  }
+  // Sync slot allocations when the routine first lands (or the user goes
+  // back to edit it). useEffect — never call setState during render.
+  useEffect(() => {
+    if (initialSlots.length === 0) return;
+    setRoomState((prev) => {
+      if (prev.slotAllocations.length === initialSlots.length) return prev;
+      return { ...INITIAL_ROOM_STATE, slotAllocations: initialSlots };
+    });
+  }, [initialSlots]);
 
   const handleAddRoom = useCallback(
     (slotKey: string, deptId: string, room: RoomInfo) => {
@@ -90,10 +91,21 @@ export function useSEERoomAssignment(args: {
     [roomState.slotAllocations],
   );
 
-  const assignMutation = useMutation({
+  // The single-call transactional finalize. Nothing is in the database
+  // before this fires; everything is either committed or rolled back.
+  const finalizeMutation = useMutation({
     mutationFn: () =>
-      assignCIERooms({
-        assignments: buildAssignRoomsPayload(roomState.slotAllocations),
+      finalizeSEEExam({
+        departmentId: args.departmentId,
+        semester: args.semester,
+        schedules: args.routine.map((r) => ({
+          slotKey: r.localId,
+          courseId: r.courseId,
+          date: r.date,
+          startTime: r.startTime,
+          endTime: r.endTime,
+        })),
+        roomAssignments: buildAssignRoomsPayload(roomState.slotAllocations),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["shared", "exam-groups"] });
@@ -109,9 +121,9 @@ export function useSEERoomAssignment(args: {
     handleRemoveRoom,
     handleApplySharing,
     handleRemoveSharing,
-    assign: assignMutation.mutate,
-    isAssigning: assignMutation.isPending,
-    assignError: assignMutation.error,
-    assignSuccess: assignMutation.isSuccess,
+    finalize: finalizeMutation.mutate,
+    isFinalizing: finalizeMutation.isPending,
+    finalizeError: finalizeMutation.error,
+    finalizeSuccess: finalizeMutation.isSuccess,
   };
 }

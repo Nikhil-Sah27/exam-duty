@@ -69,6 +69,7 @@ export default function ExamsPage() {
       ) : (
         <ExamGrid
           groups={filtered}
+          selectedType={filterType}
           onAddClick={() => setModalOpen(true)}
           onDelete={(group) => setDeleteTarget(group)}
         />
@@ -93,11 +94,28 @@ export default function ExamsPage() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
         isLoading={deleteMutation.isPending}
-        title="Delete Exam Group"
+        title="Delete Exam?"
         message={
-          deleteTarget
-            ? `This will permanently delete the ${deleteTarget.examType} Sem ${deleteTarget.semester} exam group and all its schedules and room assignments. This action cannot be undone.`
-            : ""
+          deleteTarget && (
+            <>
+              <p className="mb-2">
+                <span className="font-semibold text-gray-800">
+                  {deleteTarget.examType} — Semester {deleteTarget.semester}
+                </span>
+              </p>
+              <p className="mb-2">This will:</p>
+              <ul className="list-disc space-y-1 pl-5 text-sm text-gray-600">
+                <li>delete schedules</li>
+                <li>release teacher duties</li>
+                <li>free room allocations</li>
+                <li>cancel linked change requests</li>
+                <li>notify affected staff</li>
+              </ul>
+              <p className="mt-3 text-xs text-gray-500">
+                This action cannot be undone.
+              </p>
+            </>
+          )
         }
       />
     </div>

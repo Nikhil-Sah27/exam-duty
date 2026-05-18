@@ -6,8 +6,7 @@ import ConfigStep from "../components/steps/ConfigStep";
 import RoutineStep from "../components/steps/RoutineStep";
 import SummaryStep from "../components/steps/SummaryStep";
 import RoomAssignStep from "../components/steps/RoomAssignStep";
-import { useExamCreation, useCreateCIEPlan, useAssignCIERooms } from "../hooks";
-import type { CreatePlanPayload } from "../types";
+import { useExamCreation, useFinalizeCIEExam } from "../hooks";
 import { getGlobalAllocationStats } from "../selectors/allocationSelectors";
 import {
   mapRoutineToScheduleIds,
@@ -16,46 +15,44 @@ import {
 
 export default function CIEPage() {
   const exam = useExamCreation();
-  const createPlan = useCreateCIEPlan();
-  const assignRooms = useAssignCIERooms();
+  const finalize = useFinalizeCIEExam();
   const navigate = useNavigate();
   const [success, setSuccess] = useState(false);
-  const [planError, setPlanError] = useState<string | null>(null);
+  const [finalizeError, setFinalizeError] = useState<string | null>(null);
 
-  const handleCreatePlan = () => {
-    setPlanError(null);
-    const payload: CreatePlanPayload = {
-      examType: exam.config.examType,
-      semester: exam.config.semester,
-      startDate: exam.config.startDate,
-      endDate: exam.config.endDate,
-      shifts: exam.config.shifts,
-      routine: exam.routine,
-    };
-
-    createPlan.mutate(payload, {
-      onSuccess: (data: any) => {
-        exam.setPlanId(data._id || null);
-        const scheduleMapping: Record<string, string> = data.scheduleMapping || {};
-        const scheduleIds = mapRoutineToScheduleIds(exam.routine, scheduleMapping);
-        exam.initSlotAllocations(scheduleIds);
-        exam.nextStep();
-      },
-      onError: (error: Error) => {
-        setPlanError(error.message);
-      },
-    });
+  // Step 2 → Step 3 transition. NO database write happens here. We build a
+  // routine→slotKey list and seed the room-allocation reducer with those
+  // synthetic ids. Nothing about the exam exists in the DB yet.
+  const handleAdvanceToRooms = () => {
+    setFinalizeError(null);
+    // Empty mapping → mapRoutineToScheduleIds falls back to the slotKey
+    // (`${date}|${shiftIndex}`) for every routine entry.
+    const scheduleIds = mapRoutineToScheduleIds(exam.routine, {});
+    exam.initSlotAllocations(scheduleIds);
+    exam.nextStep();
   };
 
-  const handleAssignRooms = () => {
-    const assignments = buildAssignRoomsPayload(exam.slotAllocations);
-
-    if (assignments.length === 0) {
-      setSuccess(true);
-      return;
-    }
-
-    assignRooms.mutate({ assignments }, { onSuccess: () => setSuccess(true) });
+  // Step 4 final submit. Ships the entire draft in one POST; backend creates
+  // ExamGroup + Schedules + PlanEntries + ExamRooms inside one transaction.
+  // On any failure, nothing is persisted (rollback handled by Mongo session
+  // inside `withOptionalTransaction`).
+  const handleFinalizeExam = () => {
+    setFinalizeError(null);
+    finalize.mutate(
+      {
+        examType: exam.config.examType,
+        semester: exam.config.semester,
+        startDate: exam.config.startDate,
+        endDate: exam.config.endDate,
+        shifts: exam.config.shifts,
+        routine: exam.routine,
+        roomAssignments: buildAssignRoomsPayload(exam.slotAllocations),
+      },
+      {
+        onSuccess: () => setSuccess(true),
+        onError: (error: Error) => setFinalizeError(error.message),
+      },
+    );
   };
 
   if (success) {
@@ -208,9 +205,9 @@ export default function CIEPage() {
           routine={exam.routine}
           examDates={exam.examDates}
           warnings={exam.routineWarnings}
-          isCreating={createPlan.isPending}
-          error={planError}
-          onCreatePlan={handleCreatePlan}
+          isCreating={false}
+          error={null}
+          onCreatePlan={handleAdvanceToRooms}
           onPrev={exam.prevStep}
         />
       )}
@@ -221,12 +218,13 @@ export default function CIEPage() {
           usedRoomsMap={exam.usedRoomsMap}
           avgStudentsPerClass={exam.config.avgStudentsPerClass}
           warnings={exam.roomWarnings}
-          isAssigning={assignRooms.isPending}
+          isAssigning={finalize.isPending}
+          error={finalizeError}
           onAddRoom={exam.handleAddRoom}
           onRemoveRoom={exam.handleRemoveRoom}
           onApplySharing={exam.handleApplySharing}
           onRemoveSharing={exam.handleRemoveSharing}
-          onAssignRooms={handleAssignRooms}
+          onAssignRooms={handleFinalizeExam}
           onPrev={exam.prevStep}
         />
       )}

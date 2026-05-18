@@ -4,6 +4,7 @@ import type {
   BuildingGrouped,
   CreatePlanPayload,
   AssignRoomsPayload,
+  FinalizeCIEPayload,
   ApiResponse,
   CreateExamsStatusResponse,
 } from "../types";
@@ -47,6 +48,17 @@ export const assignCIERooms = async (
   const res = await api.post<ApiResponse<unknown>>(
     "/create-exams/cie/assign-rooms",
     payload
+  );
+  return res.data.data;
+};
+
+// Single-call transactional finalize. Nothing is persisted before this fires.
+export const finalizeCIEExam = async (
+  payload: FinalizeCIEPayload,
+): Promise<unknown> => {
+  const res = await api.post<ApiResponse<unknown>>(
+    "/create-exams/cie/finalize",
+    payload,
   );
   return res.data.data;
 };

@@ -167,6 +167,17 @@ export interface AssignRoomsPayload {
   }[];
 }
 
+/**
+ * Single-call transactional payload — used by the deferred-write UI. Nothing
+ * is persisted to the database until this payload reaches `/cie/finalize`.
+ * `scheduleId` inside `roomAssignments` is a *synthetic slot key*
+ * (`${date}|${shiftIndex}`); the backend resolves it to a real ExamSchedule
+ * _id as it creates the schedules inside the transaction.
+ */
+export interface FinalizeCIEPayload extends CreatePlanPayload {
+  roomAssignments: AssignRoomsPayload["assignments"];
+}
+
 // ---------- API Responses ----------
 
 export interface CreateExamsStatusResponse {

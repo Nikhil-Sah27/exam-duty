@@ -12,6 +12,14 @@ const statusVariant: Record<ChangeRequestStatus, BadgeVariant> = {
   pending: "yellow",
   approved: "green",
   rejected: "gray",
+  cancelled_exam_deleted: "gray",
+};
+
+const statusLabel: Record<ChangeRequestStatus, string> = {
+  pending: "Pending",
+  approved: "Approved",
+  rejected: "Rejected",
+  cancelled_exam_deleted: "Cancelled — Exam Deleted",
 };
 
 interface ChangeRequestTableProps {
@@ -121,7 +129,7 @@ export default function ChangeRequestTable({
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge
-                      label={capitalize(req.status)}
+                      label={statusLabel[req.status] ?? capitalize(req.status)}
                       variant={statusVariant[req.status]}
                     />
                   </td>

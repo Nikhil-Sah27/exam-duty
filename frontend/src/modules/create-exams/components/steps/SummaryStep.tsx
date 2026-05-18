@@ -167,11 +167,11 @@ export default function SummaryStep({
         <Button onClick={onCreatePlan} disabled={isCreating}>
           {isCreating ? (
             <>
-              <Loader2 className="mr-1 h-4 w-4 animate-spin" /> Creating...
+              <Loader2 className="mr-1 h-4 w-4 animate-spin" /> Loading...
             </>
           ) : (
             <>
-              <CheckCircle2 className="mr-1 h-4 w-4" /> Create Plan & Assign Rooms
+              <CheckCircle2 className="mr-1 h-4 w-4" /> Continue to Room Assignment
             </>
           )}
         </Button>

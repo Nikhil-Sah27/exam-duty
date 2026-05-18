@@ -12,8 +12,15 @@ const getBySchedule = catchAsync(async (req, res) => {
 });
 
 const remove = catchAsync(async (req, res) => {
-  await examRoomService.removeRoom(req.params.id);
-  res.status(200).json({ success: true, message: "Room removed from schedule" });
+  const summary = await examRoomService.removeRoom(req.params.id, {
+    actorId: req.user.id,
+    ipAddress: req.ip,
+  });
+  res.status(200).json({
+    success: true,
+    message: "Room removed from schedule",
+    data: summary,
+  });
 });
 
 module.exports = { create, getBySchedule, remove };

@@ -3,7 +3,11 @@ import type {
   DepartmentData,
   ApiResponse,
 } from "../../types";
-import type { SEEPlanPayload, SEEPlanResponse } from "../types";
+import type {
+  SEEPlanPayload,
+  SEEPlanResponse,
+  FinalizeSEEPayload,
+} from "../types";
 
 /**
  * Reuse the CIE departments-data endpoint — it already supports a comma-
@@ -27,6 +31,17 @@ export const createSEEPlan = async (
 ): Promise<SEEPlanResponse> => {
   const res = await api.post<ApiResponse<SEEPlanResponse>>(
     "/create-exams/see/plan",
+    payload,
+  );
+  return res.data.data;
+};
+
+// Single-call transactional finalize. Nothing is persisted before this fires.
+export const finalizeSEEExam = async (
+  payload: FinalizeSEEPayload,
+): Promise<unknown> => {
+  const res = await api.post<ApiResponse<unknown>>(
+    "/create-exams/see/finalize",
     payload,
   );
   return res.data.data;

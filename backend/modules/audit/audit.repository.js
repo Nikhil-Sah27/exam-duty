@@ -1,6 +1,9 @@
 const AuditLog = require("./audit.model");
 
-const create = (data) => AuditLog.create(data);
+const create = (data, session) => {
+  if (session) return AuditLog.create([data], { session }).then((d) => d[0]);
+  return AuditLog.create(data);
+};
 
 const findAll = (filter = {}) =>
   AuditLog.find(filter)

@@ -3,18 +3,21 @@ import type {
   SlotAllocation,
   DepartmentAllocation,
 } from "../../types";
-import type { SEERoutineEntry, SEEPlanResponse } from "../types";
+import type { SEERoutineEntry } from "../types";
 
 /**
  * Build the SlotAllocation[] shape the existing CIE room-allocation reducer
- * expects, from a finalized SEE routine + the backend's courseId → scheduleId
- * mapping. Each SEE routine entry becomes ONE slot with ONE department
- * allocation (single-dept by design).
+ * expects, from a SEE routine. Each SEE routine entry becomes ONE slot with
+ * ONE department allocation (SEE is single-dept by design).
+ *
+ * `scheduleId` is the routine entry's `localId` — a synthetic slotKey used
+ * across the room-assignment phase. Nothing is persisted in the DB yet;
+ * the backend's `/see/finalize` endpoint resolves slotKey → ExamSchedule._id
+ * inside its transaction when the user clicks "Finish & Create Exam".
  */
 export function buildSEESlotAllocations(
   routine: SEERoutineEntry[],
   department: DepartmentData,
-  scheduleMapping: SEEPlanResponse["scheduleMapping"],
   avgStudentsPerClass: number,
 ): SlotAllocation[] {
   return routine.map((entry, idx) => {
@@ -30,7 +33,7 @@ export function buildSEESlotAllocations(
     };
 
     const slot: SlotAllocation = {
-      scheduleId: scheduleMapping[entry.courseId] || "",
+      scheduleId: entry.localId,
       date: entry.date,
       // SEE doesn't have shift indices the way CIE does — every slot is its
       // own "shift". Use idx for visual ordering; the reducer keys slots by

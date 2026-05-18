@@ -8,7 +8,6 @@ import {
   useDeleteDepartment,
 } from "../hooks";
 import DepartmentHeader from "./DepartmentHeader";
-import DepartmentStats from "./DepartmentStats";
 import SemesterList from "./SemesterList";
 import DepartmentModal from "./DepartmentModal";
 import { ConfirmDeleteModal } from "@/shared/components";
@@ -55,15 +54,14 @@ export default function DepartmentDetailsPage() {
         <span className="font-medium text-gray-700">{dept.name}</span>
       </nav>
 
-      {/* Header */}
+      {/* Header — absorbs stats inline */}
       <DepartmentHeader
         department={dept}
+        stats={stats}
+        statsLoading={statsLoading}
         onEdit={() => setEditOpen(true)}
         onDelete={() => setDeleteOpen(true)}
       />
-
-      {/* Stats */}
-      <DepartmentStats stats={stats} isLoading={statsLoading} />
 
       {/* Semesters */}
       <SemesterList deptId={id!} />

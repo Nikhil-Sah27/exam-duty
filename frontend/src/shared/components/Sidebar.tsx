@@ -12,7 +12,7 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`fixed left-0 top-16 h-[calc(100vh-4rem)] bg-gray-900 text-white transition-all duration-300 ${
+      className={`fixed left-0 top-16 h-[calc(100vh-4rem)] border-r border-gray-800 bg-gradient-to-b from-gray-950 via-gray-900 to-gray-950 text-white transition-all duration-300 ${
         sidebarOpen ? "w-60" : "w-0 overflow-hidden"
       }`}
     >
@@ -27,13 +27,17 @@ export default function Sidebar() {
             <Link
               key={item.path}
               to={item.path}
-              className={`flex items-center gap-3 rounded px-3 py-2 text-sm transition-colors ${
+              className={`group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-200 ${
                 isActive
-                  ? "bg-gray-700 font-medium text-white"
-                  : "text-gray-300 hover:bg-gray-800 hover:text-white"
+                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 font-medium text-white shadow-md shadow-blue-600/30"
+                  : "text-gray-300 hover:translate-x-0.5 hover:bg-white/5 hover:text-white"
               }`}
             >
-              <Icon className="h-4 w-4 shrink-0" />
+              <Icon
+                className={`h-4 w-4 shrink-0 transition-transform group-hover:scale-110 ${
+                  isActive ? "text-white" : "text-gray-400 group-hover:text-white"
+                }`}
+              />
               {item.label}
             </Link>
           );

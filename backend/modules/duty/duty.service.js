@@ -166,6 +166,87 @@ const selfAssignDuty = async (data, userId) => {
   return assignDuty({ ...data, teacher: userId }, userId, true);
 };
 
+/**
+ * Self-assign one **room group** for an RS user. The caller supplies a single
+ * `examSchedule` and the list of `examRooms` that form the group (validated
+ * to all belong to that schedule). The whole batch is written inside one
+ * `withOptionalTransaction` block — either every room in the group becomes
+ * the RS's duty, or none do.
+ *
+ * Conflict semantics: the entire group rejects on the first conflict (any
+ * teacher- or room-overlap), and the partial state is rolled back when the
+ * deployment supports transactions. On standalone Mongo, partial state is
+ * possible — same trade-off as elsewhere in the service.
+ */
+const selfAssignDutyGroup = async (data, userId) => {
+  const { examSchedule, examRooms } = data;
+
+  if (!examSchedule) throw new AppError("examSchedule is required", 400);
+  if (!Array.isArray(examRooms) || examRooms.length === 0) {
+    throw new AppError("examRooms must be a non-empty array", 400);
+  }
+  // De-dupe defensively; the same examRoom id twice would be a UI bug, but
+  // still better to surface it cleanly than to slip past Mongo's room-unique
+  // duty index with a confusing 500.
+  const uniqueRoomIds = [...new Set(examRooms.map((id) => String(id)))];
+  if (uniqueRoomIds.length !== examRooms.length) {
+    throw new AppError("examRooms contains duplicate entries", 400);
+  }
+
+  await validateTeacher(userId);
+
+  // Resolve & validate every room belongs to the schedule before writing.
+  const resolved = await Promise.all(
+    uniqueRoomIds.map((roomId) => validateScheduleSlot(examSchedule, roomId)),
+  );
+
+  // Snapshot the schedule's date/time once — every room in a group shares it
+  // by construction (the schedule itself owns those fields).
+  const { schedule } = resolved[0];
+  const date = schedule.date;
+  const startTime = schedule.startTime;
+  const endTime = schedule.endTime;
+  validateTimeRange(startTime, endTime);
+
+  // Pre-flight conflict scan: same teacher cannot already have a duty at
+  // this time, and each individual room must be free. We surface the first
+  // conflict before opening the transaction so the error message names a
+  // specific room rather than "transaction aborted".
+  for (const { examRoom } of resolved) {
+    const roomNumber = examRoom?.room?.roomNumber || "";
+    await validateConflicts(userId, roomNumber, date, startTime, endTime);
+  }
+
+  const createdIds = await withOptionalTransaction(async (session) => {
+    const ids = [];
+    for (const { schedule: s, examRoom } of resolved) {
+      const roomNumber = examRoom?.room?.roomNumber || "";
+      const duty = await dutyRepository.create(
+        {
+          exam: null,
+          examSchedule: s._id,
+          examRoom: examRoom._id,
+          teacher: userId,
+          room: roomNumber,
+          date: s.date,
+          startTime: s.startTime,
+          endTime: s.endTime,
+          assignedBy: userId,
+          isSelfAssigned: true,
+        },
+        session,
+      );
+      ids.push(duty._id);
+    }
+    return ids;
+  });
+
+  const populated = await Promise.all(
+    createdIds.map((id) => dutyRepository.findById(id)),
+  );
+  return populated;
+};
+
 const adminAssignDuty = async (data, adminId) => {
   if (!data.teacher) throw new AppError("Teacher ID is required for admin assignment", 400);
   return assignDuty(data, adminId, false);
@@ -221,6 +302,7 @@ const cancelDuty = async (id, cancelReason) => {
 
 module.exports = {
   selfAssignDuty,
+  selfAssignDutyGroup,
   adminAssignDuty,
   getAllDuties,
   getDutyById,

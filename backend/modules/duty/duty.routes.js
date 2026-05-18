@@ -8,6 +8,7 @@ const router = express.Router();
 router.use(protect);
 
 router.post("/self-assign", dutyController.selfAssign);
+router.post("/self-assign-group", dutyController.selfAssignGroup);
 router.post("/admin-assign", dutyController.adminAssign);
 router.get("/", dutyController.getAll);
 router.get("/:id", dutyController.getById);

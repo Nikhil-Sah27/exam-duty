@@ -17,6 +17,9 @@ export interface AvailableDutySlot {
   endTime: string;
   roomId: string;
   roomNumber: string;
+  /** Stable id of the building, used by the RS grouping engine to partition
+   *  rooms (`buildingName` can collide across buildings; `buildingId` cannot). */
+  buildingId: string;
   buildingName: string;
   capacity: number;
   departments: string[];
@@ -89,6 +92,7 @@ export function selectDutySlotsForGroup({
         endTime: schedule.endTime,
         roomId: examRoom.room._id,
         roomNumber: examRoom.room.roomNumber,
+        buildingId: examRoom.room.building?._id || "unknown",
         buildingName: examRoom.room.building?.name || "Unknown",
         capacity: examRoom.room.capacity,
         departments: examRoom.departments,

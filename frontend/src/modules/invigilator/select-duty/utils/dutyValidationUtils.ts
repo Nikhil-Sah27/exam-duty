@@ -1,50 +1,22 @@
 import type { Duty } from "@/modules/duties/types";
 import type { RoomDutyFlags } from "@/modules/shared/exams/types/exam.types";
+import {
+  findTimeConflict as sharedFindTimeConflict,
+  describeConflict,
+} from "@/modules/shared/duties/utils/timeConflictUtils";
+import {
+  durationHours as sharedDurationHours,
+  totalHours as sharedTotalHours,
+  uniqueUpcomingDates as sharedUniqueUpcomingDates,
+} from "@/modules/shared/duties/utils/dutyDurationUtils";
 import type { DutySlot, SelectionValidation } from "../types";
 
-function toMinutes(time: string): number {
-  const [h, m] = time.split(":").map(Number);
-  return h * 60 + m;
-}
-
-function sameDay(a: string, b: string): boolean {
-  const da = new Date(a);
-  const db = new Date(b);
-  da.setHours(0, 0, 0, 0);
-  db.setHours(0, 0, 0, 0);
-  return da.getTime() === db.getTime();
-}
-
-function overlaps(
-  startA: string,
-  endA: string,
-  startB: string,
-  endB: string
-): boolean {
-  return toMinutes(startA) < toMinutes(endB) && toMinutes(startB) < toMinutes(endA);
-}
-
-export function findTimeConflict(
-  candidate: DutySlot,
-  selected: DutySlot[],
-  myDuties: Duty[]
-): DutySlot | Duty | null {
-  for (const s of selected) {
-    if (s.slotId === candidate.slotId) continue;
-    if (!sameDay(s.date, candidate.date)) continue;
-    if (overlaps(s.startTime, s.endTime, candidate.startTime, candidate.endTime)) {
-      return s;
-    }
-  }
-  for (const d of myDuties) {
-    if (d.status !== "assigned") continue;
-    if (!sameDay(d.date, candidate.date)) continue;
-    if (overlaps(d.startTime, d.endTime, candidate.startTime, candidate.endTime)) {
-      return d;
-    }
-  }
-  return null;
-}
+/**
+ * Invigilator-specific validation that wraps the shared time-conflict engine
+ * with the single-slot "is this exact slotId already taken by my role's flag?"
+ * check. Shared primitives live under @/modules/shared/duties so RS (and any
+ * future role) can reuse them without duplicating logic.
+ */
 
 const ROLE_LABEL: Record<keyof RoomDutyFlags, string> = {
   invigilatorAssigned: "invigilator",
@@ -52,11 +24,29 @@ const ROLE_LABEL: Record<keyof RoomDutyFlags, string> = {
   dcsAssigned: "DCS",
 };
 
+export function findTimeConflict(
+  candidate: DutySlot,
+  selected: DutySlot[],
+  myDuties: Duty[],
+): DutySlot | Duty | null {
+  return sharedFindTimeConflict(
+    { id: candidate.slotId, date: candidate.date, startTime: candidate.startTime, endTime: candidate.endTime },
+    selected.map((s) => ({
+      id: s.slotId,
+      date: s.date,
+      startTime: s.startTime,
+      endTime: s.endTime,
+      _original: s,
+    })),
+    myDuties,
+  ) as DutySlot | Duty | null;
+}
+
 export function validateSelection(
   candidate: DutySlot,
   selected: DutySlot[],
   myDuties: Duty[],
-  flagKey: keyof RoomDutyFlags
+  flagKey: keyof RoomDutyFlags,
 ): SelectionValidation {
   if (candidate.flags[flagKey]) {
     return {
@@ -69,15 +59,23 @@ export function validateSelection(
     return { ok: false, reason: "This slot is already in your selection." };
   }
 
-  const conflict = findTimeConflict(candidate, selected, myDuties);
+  // Build the lightweight TimeWindow array the shared engine expects.
+  const windows = selected.map((s) => ({
+    id: s.slotId,
+    date: s.date,
+    startTime: s.startTime,
+    endTime: s.endTime,
+    roomNumber: s.roomNumber,
+  }));
+  const conflict = sharedFindTimeConflict(
+    { id: candidate.slotId, date: candidate.date, startTime: candidate.startTime, endTime: candidate.endTime },
+    windows,
+    myDuties,
+  );
   if (conflict) {
-    const label =
-      "roomNumber" in conflict
-        ? `${conflict.roomNumber} (${conflict.startTime}–${conflict.endTime})`
-        : `${conflict.room} (${conflict.startTime}–${conflict.endTime})`;
     return {
       ok: false,
-      reason: `Time conflict with ${label} on the same day.`,
+      reason: `Time conflict with ${describeConflict(conflict as never)} on the same day.`,
     };
   }
 
@@ -85,20 +83,13 @@ export function validateSelection(
 }
 
 export function durationHours(slot: DutySlot): number {
-  const mins = toMinutes(slot.endTime) - toMinutes(slot.startTime);
-  return mins / 60;
+  return sharedDurationHours(slot);
 }
 
 export function totalHours(slots: DutySlot[]): number {
-  return slots.reduce((sum, s) => sum + durationHours(s), 0);
+  return sharedTotalHours(slots);
 }
 
 export function uniqueUpcomingDates(slots: DutySlot[]): string[] {
-  const set = new Set<string>();
-  for (const s of slots) {
-    const d = new Date(s.date);
-    d.setHours(0, 0, 0, 0);
-    set.add(d.toISOString());
-  }
-  return [...set].sort();
+  return sharedUniqueUpcomingDates(slots);
 }

@@ -28,4 +28,17 @@ const getRooms = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data: rooms });
 });
 
-module.exports = { getDepartmentsData, calculateDates, createPlan, assignRooms, getRooms };
+// Single-call transactional finalize — replaces the old plan+assign two-step.
+const finalize = catchAsync(async (req, res) => {
+  const result = await cieService.finalizeCIEPlan(req.body, req.user.id);
+  res.status(201).json({ success: true, data: result });
+});
+
+module.exports = {
+  getDepartmentsData,
+  calculateDates,
+  createPlan,
+  assignRooms,
+  getRooms,
+  finalize,
+};

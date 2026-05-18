@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { ReactNode, useState } from "react";
 import Modal from "./Modal";
 import Button from "./Button";
 
@@ -8,7 +8,7 @@ interface ConfirmDeleteModalProps {
   onConfirm: () => void;
   isLoading?: boolean;
   title: string;
-  message: string;
+  message: ReactNode;
 }
 
 export default function ConfirmDeleteModal({
@@ -35,7 +35,11 @@ export default function ConfirmDeleteModal({
   return (
     <Modal open={open} onClose={handleClose} title={title}>
       <div className="space-y-4">
-        <p className="text-sm text-gray-600">{message}</p>
+        {typeof message === "string" ? (
+          <p className="text-sm text-gray-600">{message}</p>
+        ) : (
+          <div className="text-sm text-gray-600">{message}</div>
+        )}
         <div>
           <label className="mb-1.5 block text-sm font-medium text-gray-700">
             Type <span className="font-bold text-red-600">DELETE</span> to confirm

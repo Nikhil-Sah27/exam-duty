@@ -38,5 +38,30 @@ export interface SEEPlanResponse {
   scheduleMapping: Record<string, string>;
 }
 
+/**
+ * Single-call transactional payload — used by the deferred-write SEE UI.
+ * Each schedule's `slotKey` is the routine entry's `localId`; room
+ * assignments reference that same key so the backend can resolve
+ * (slotKey → ExamSchedule._id) atomically inside the finalize transaction.
+ */
+export interface FinalizeSEEPayload {
+  departmentId: string;
+  semester: string;
+  schedules: {
+    slotKey: string;
+    courseId: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+  }[];
+  roomAssignments: {
+    scheduleId: string; // slotKey
+    roomId: string;
+    departmentCode: string;
+    students?: number;
+    isShared?: boolean;
+  }[];
+}
+
 /** Re-export so consumers in /see can import everything from this module. */
 export type { DepartmentData };

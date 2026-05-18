@@ -1,6 +1,7 @@
 const AppError = require("../../shared/utils/AppError");
 const examScheduleRepo = require("./examSchedule.repository");
 const examRoomRepo = require("./examRoom.repository");
+const examDeletionService = require("../exam-cleanup/services/examDeletionService");
 
 const addRoom = async (data) => {
   const schedule = await examScheduleRepo.findById(data.schedule);
@@ -13,11 +14,10 @@ const getRoomsBySchedule = async (scheduleId) => {
   return examRoomRepo.findBySchedule(scheduleId);
 };
 
-const removeRoom = async (id) => {
-  const room = await examRoomRepo.findById(id);
-  if (!room) throw new AppError("Exam room not found", 404);
-
-  return examRoomRepo.deleteById(id);
+// Delegates to the centralized cascade. Releases all duties at this room,
+// cancels open change requests, notifies teachers, audits — atomically.
+const removeRoom = async (id, actor = {}) => {
+  return examDeletionService.deleteExamRoomWithCleanup(id, actor);
 };
 
 module.exports = {

@@ -1,5 +1,9 @@
 export type ChangeRequestType = "swap" | "drop";
-export type ChangeRequestStatus = "pending" | "approved" | "rejected";
+export type ChangeRequestStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "cancelled_exam_deleted";
 
 export interface ChangeRequest {
   _id: string;

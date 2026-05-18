@@ -1,77 +1,106 @@
-import { useState } from "react";
-import { ChevronDown, ChevronRight, Trash2, Pencil, Users, BookOpen } from "lucide-react";
+import { Pencil, Trash2, BookOpen, Users } from "lucide-react";
 import { Semester } from "../types";
 import { useCourses } from "../hooks";
-import CourseList from "./CourseList";
 
 interface SemesterCardProps {
   semester: Semester;
-  deptId: string;
-  onDelete: (id: string) => void;
+  selected: boolean;
+  onSelect: (id: string) => void;
   onEdit: (semester: Semester) => void;
+  onDelete: (id: string) => void;
 }
 
-export default function SemesterCard({ semester, deptId, onDelete, onEdit }: SemesterCardProps) {
-  const [expanded, setExpanded] = useState(false);
+// Compact tile used inside the SemesterList grid. Tile-level click selects
+// this semester (its courses render in the panel below the grid); edit/delete
+// stop propagation so they don't toggle selection.
+export default function SemesterCard({
+  semester,
+  selected,
+  onSelect,
+  onEdit,
+  onDelete,
+}: SemesterCardProps) {
   const { data: courses } = useCourses(semester._id);
-
   const courseCount = courses?.length ?? 0;
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-      {/* Header row */}
-      <div
-        className="flex cursor-pointer items-center gap-3 px-5 py-4 transition-colors hover:bg-gray-50/50"
-        onClick={() => setExpanded(!expanded)}
-      >
-        {expanded ? (
-          <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" />
-        ) : (
-          <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
-        )}
+    <button
+      type="button"
+      onClick={() => onSelect(semester._id)}
+      aria-pressed={selected}
+      className={`group relative flex flex-col rounded-xl border bg-white p-4 text-left shadow-sm transition-all hover:shadow-md ${
+        selected
+          ? "border-blue-500 ring-2 ring-blue-200"
+          : "border-gray-200 hover:border-gray-300"
+      }`}
+    >
+      <div className="flex items-start justify-between">
+        <div>
+          <span className="text-[10px] font-medium uppercase tracking-wider text-gray-400">
+            Semester
+          </span>
+          <p
+            className={`text-2xl font-bold leading-none ${
+              selected ? "text-blue-600" : "text-gray-900"
+            }`}
+          >
+            {semester.name}
+          </p>
+        </div>
 
-        <span className="text-sm font-semibold text-gray-800">
-          {semester.name}
-        </span>
-
-        <div className="ml-auto flex items-center gap-5">
-          <div className="flex items-center gap-1.5 text-xs text-gray-500">
-            <Users className="h-3.5 w-3.5 text-blue-500" />
-            <span>{semester.studentCount} students</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-xs text-gray-500">
-            <BookOpen className="h-3.5 w-3.5 text-emerald-500" />
-            <span>{courseCount} courses</span>
-          </div>
-          <button
+        <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          <span
+            role="button"
+            tabIndex={0}
             onClick={(e) => {
               e.stopPropagation();
               onEdit(semester);
             }}
-            className="rounded p-1 text-gray-300 transition-colors hover:bg-blue-50 hover:text-blue-500"
-            title="Edit"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                onEdit(semester);
+              }
+            }}
+            className="rounded p-1 text-gray-300 hover:bg-blue-50 hover:text-blue-500"
+            title="Edit semester"
           >
-            <Pencil className="h-4 w-4" />
-          </button>
-          <button
+            <Pencil className="h-3.5 w-3.5" />
+          </span>
+          <span
+            role="button"
+            tabIndex={0}
             onClick={(e) => {
               e.stopPropagation();
               onDelete(semester._id);
             }}
-            className="rounded p-1 text-gray-300 transition-colors hover:bg-red-50 hover:text-red-500"
-            title="Delete"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                onDelete(semester._id);
+              }
+            }}
+            className="rounded p-1 text-gray-300 hover:bg-red-50 hover:text-red-500"
+            title="Delete semester"
           >
-            <Trash2 className="h-4 w-4" />
-          </button>
+            <Trash2 className="h-3.5 w-3.5" />
+          </span>
         </div>
       </div>
 
-      {/* Expanded — courses */}
-      {expanded && (
-        <div className="border-t border-gray-100 px-5 py-4">
-          <CourseList semesterId={semester._id} deptId={deptId} />
-        </div>
-      )}
-    </div>
+      <div className="mt-4 flex items-center gap-3 text-xs text-gray-500">
+        <span className="inline-flex items-center gap-1">
+          <BookOpen className="h-3.5 w-3.5 text-emerald-500" />
+          <span className="font-medium text-gray-700">{courseCount}</span> courses
+        </span>
+        <span className="text-gray-300">·</span>
+        <span className="inline-flex items-center gap-1">
+          <Users className="h-3.5 w-3.5 text-blue-500" />
+          <span className="font-medium text-gray-700">{semester.studentCount}</span> students
+        </span>
+      </div>
+    </button>
   );
 }

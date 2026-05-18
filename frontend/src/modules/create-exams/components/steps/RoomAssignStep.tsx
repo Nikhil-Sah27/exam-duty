@@ -23,6 +23,8 @@ interface RoomAssignStepProps {
   avgStudentsPerClass: number;
   warnings: string[];
   isAssigning: boolean;
+  /** Server-side error from the finalize call, surfaced inline above actions. */
+  error?: string | null;
   onAddRoom: (slotKey: string, deptId: string, room: RoomInfo) => void;
   onRemoveRoom: (slotKey: string, deptId: string, roomId: string) => void;
   onApplySharing: (slotKey: string, deptId: string, plan: SeatSharingPlanItem[]) => void;
@@ -37,6 +39,7 @@ export default function RoomAssignStep({
   avgStudentsPerClass,
   warnings,
   isAssigning,
+  error,
   onAddRoom,
   onRemoveRoom,
   onApplySharing,
@@ -56,6 +59,21 @@ export default function RoomAssignStep({
     () => getGlobalAllocationStats(slotAllocations),
     [slotAllocations]
   );
+
+  // Block the Finish & Create button until every active department in every
+  // slot has at least one assigned room (either primary or shared seats).
+  // Matches the backend's validation in cie.service.finalizeCIEPlan.
+  const allSlotsReady = useMemo(() => {
+    if (slotAllocations.length === 0) return false;
+    return slotAllocations.every((slot) => {
+      const active = slot.departments.filter((d) => d.courseId);
+      if (active.length === 0) return true;
+      return active.every(
+        (d) =>
+          d.assignedRooms.length > 0 || d.sharedSeatsReceived.length > 0,
+      );
+    });
+  }, [slotAllocations]);
 
   if (isLoading) {
     return <p className="py-10 text-center text-sm text-gray-400">Loading rooms...</p>;
@@ -177,19 +195,37 @@ export default function RoomAssignStep({
         );
       })}
 
+      {/* === Block-on-incomplete notice === */}
+      {!allSlotsReady && slotAllocations.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-xs text-amber-700">
+          Cannot create exam until all schedules have rooms assigned.
+        </div>
+      )}
+
+      {/* === Server-side error === */}
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
       {/* === Actions === */}
       <div className="sticky bottom-0 flex justify-between border-t border-gray-100 bg-gray-50/80 px-1 py-4 backdrop-blur">
         <Button variant="secondary" onClick={onPrev}>
-          <ArrowLeft className="mr-1 h-4 w-4" /> Back
+          <ArrowLeft className="mr-1 h-4 w-4" /> Back to Routine
         </Button>
-        <Button onClick={onAssignRooms} disabled={isAssigning}>
+        <Button
+          onClick={onAssignRooms}
+          disabled={isAssigning || !allSlotsReady}
+          title={!allSlotsReady ? "All schedules must have at least one room" : undefined}
+        >
           {isAssigning ? (
             <>
-              <Loader2 className="mr-1 h-4 w-4 animate-spin" /> Assigning...
+              <Loader2 className="mr-1 h-4 w-4 animate-spin" /> Creating Exam...
             </>
           ) : (
             <>
-              <CheckCircle2 className="mr-1 h-4 w-4" /> Assign Rooms & Finish
+              <CheckCircle2 className="mr-1 h-4 w-4" /> Finish &amp; Create Exam
             </>
           )}
         </Button>

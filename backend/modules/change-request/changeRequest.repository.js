@@ -63,10 +63,31 @@ const updateById = (id, data) => {
   }).populate(POPULATE_DEEP);
 };
 
+// Find pending/approved requests whose duty is in the given list. Used by the
+// exam-cleanup cascade to identify open requests that must be force-cancelled
+// when their underlying duty is being released.
+const findOpenByDutyIds = (dutyIds, session) => {
+  const query = ChangeRequest.find({
+    duty: { $in: dutyIds },
+    status: { $in: ["pending", "approved"] },
+  });
+  return session ? query.session(session) : query;
+};
+
+const updateManyByIds = (ids, data, session) => {
+  return ChangeRequest.updateMany(
+    { _id: { $in: ids } },
+    data,
+    session ? { session } : {},
+  );
+};
+
 module.exports = {
   create,
   findAll,
   findById,
   findPendingByDutyAndUser,
   updateById,
+  findOpenByDutyIds,
+  updateManyByIds,
 };

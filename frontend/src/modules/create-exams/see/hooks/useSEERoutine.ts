@@ -1,9 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  fetchSEEDepartmentData,
-  createSEEPlan,
-} from "../services/seeExamService";
+import { useQuery } from "@tanstack/react-query";
+import { fetchSEEDepartmentData } from "../services/seeExamService";
 import type { SEERoutineEntry } from "../types";
 import {
   validateScheduleEntry,
@@ -14,8 +11,6 @@ let _localIdCounter = 0;
 const nextLocalId = () => `see-${Date.now()}-${++_localIdCounter}`;
 
 export function useSEERoutine() {
-  const queryClient = useQueryClient();
-
   // Config (single dept + single semester)
   const [departmentId, setDepartmentId] = useState<string>("");
   const [semester, setSemester] = useState<string>("");
@@ -112,27 +107,10 @@ export function useSEERoutine() {
     });
   }, [routine]);
 
-  // Finish-routine mutation — submits the plan to the backend.
-  const finishMutation = useMutation({
-    mutationFn: () =>
-      createSEEPlan({
-        departmentId,
-        semester,
-        schedules: routine.map((r) => ({
-          courseId: r.courseId,
-          date: r.date,
-          startTime: r.startTime,
-          endTime: r.endTime,
-        })),
-      }),
-    onSuccess: () => {
-      // Existing /exam-groups consumers (Controller exam list, Invigilator
-      // exam view) should refetch and see the new SEE plan immediately.
-      queryClient.invalidateQueries({ queryKey: ["shared", "exam-groups"] });
-      queryClient.invalidateQueries({ queryKey: ["exam-groups"] });
-    },
-  });
-
+  // Deferred-write: no API call happens when finishing the routine. The
+  // routine just transitions the page into the room-assignment phase. The
+  // actual DB write (ExamGroup + Schedules + Rooms) happens later when the
+  // user clicks "Finish & Create Exam" on the room-assignment page.
   const canFinish = routine.length > 0 && Boolean(departmentId && semester);
 
   return {
@@ -159,12 +137,6 @@ export function useSEERoutine() {
     startEdit,
     cancelEdit,
 
-    // submit
-    finish: finishMutation.mutate,
-    finishAsync: finishMutation.mutateAsync,
-    isFinishing: finishMutation.isPending,
-    finishResult: finishMutation.data,
-    finishError: finishMutation.error,
     canFinish,
   };
 }

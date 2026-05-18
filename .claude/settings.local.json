@@ -89,7 +89,25 @@
       "Bash(python -c ' *)",
       "Bash(python -m json.tool)",
       "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('rs login ok:', d.get\\('success'\\), 'role:', d.get\\('data',{}\\).get\\('user',{}\\).get\\('role'\\)\\)\")",
-      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d.get\\('data',{}\\).get\\('token',''\\)\\)\")"
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d.get\\('data',{}\\).get\\('token',''\\)\\)\")",
+      "Bash(git push *)",
+      "Bash(git fetch *)",
+      "Bash(netsh interface *)",
+      "Bash(findstr \":27017\")",
+      "Bash(findstr \"LISTENING\")",
+      "Bash(findstr \":5000 :3000\")",
+      "Bash(findstr \":3000\")",
+      "Bash(tasklist *)",
+      "PowerShell(Get-Process *)",
+      "PowerShell(Get-NetTCPConnection *)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(npx tsx *)",
+      "PowerShell(Get-Service *)",
+      "PowerShell(netsh interface *)",
+      "Bash(netsh int *)",
+      "Bash(Get-ChildItem -Path \"D:\\\\exam-duty\\\\backend\\\\modules\" -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(Get-ChildItem -Path \"D:\\\\exam-duty\\\\frontend\\\\src\\\\shared\\\\components\" -File)"
     ]
   }
 }

@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { CheckCircle2, ChevronRight, ArrowLeft, Loader2, Plus } from "lucide-react";
+import { CheckCircle2, ChevronRight, ArrowLeft, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Button from "@/shared/components/Button";
 import RoomAssignStep from "../../components/steps/RoomAssignStep";
-import type { SEEPlanResponse } from "../types";
 import { useSEERoutine } from "../hooks/useSEERoutine";
 import { useSEERoomAssignment } from "../hooks/useSEERoomAssignment";
 import DepartmentSelector from "../components/DepartmentSelector";
@@ -14,22 +13,27 @@ import ScheduledRoutineList from "../components/ScheduledRoutineList";
 type Phase = "routine" | "rooms" | "done";
 
 /**
- * Full SEE setup workflow. Two-phase pattern matching CIE:
- *   Phase "routine"  — build the per-course schedule, finish → backend
- *   Phase "rooms"    — assign rooms using the reused CIE RoomAssignStep
- *   Phase "done"     — success screen
+ * Full SEE setup workflow. Three phases:
+ *   "routine"  — build the per-course schedule (NO database write)
+ *   "rooms"    — assign rooms using the reused CIE RoomAssignStep (NO DB write)
+ *   "done"     — success screen
+ *
+ * The exam is created in the database ONLY when the user clicks
+ * "Finish & Create Exam" in the rooms phase. Everything before that lives
+ * entirely in component state — refreshing or backing out leaves no orphaned
+ * records behind.
  */
 export default function SEEExamSetupPage() {
   const navigate = useNavigate();
   const [phase, setPhase] = useState<Phase>("routine");
-  const [planResponse, setPlanResponse] = useState<SEEPlanResponse | null>(null);
 
   const routineHook = useSEERoutine();
 
   const roomAssignment = useSEERoomAssignment({
+    departmentId: routineHook.departmentId,
+    semester: routineHook.semester,
     routine: routineHook.routine,
     department: routineHook.department ?? null,
-    scheduleMapping: planResponse?.scheduleMapping ?? null,
     avgStudentsPerClass: 60,
   });
 
@@ -38,18 +42,15 @@ export default function SEEExamSetupPage() {
       ? routineHook.routine.find((r) => r.localId === routineHook.editingId) ?? null
       : null;
 
-  const handleFinishRoutine = async () => {
-    try {
-      const result = await routineHook.finishAsync();
-      setPlanResponse(result);
-      setPhase("rooms");
-    } catch {
-      // Error surfaces via routineHook.finishError; no-op here.
-    }
+  // Routine → rooms transition. No API call. The room-assignment hook seeds
+  // its slot list from the routine + department (slotKey = routine.localId).
+  const handleAdvanceToRooms = () => {
+    setPhase("rooms");
   };
 
-  const handleAssignRooms = () => {
-    roomAssignment.assign(undefined, {
+  // Rooms → finalize. Single transactional create on the backend.
+  const handleFinalizeExam = () => {
+    roomAssignment.finalize(undefined, {
       onSuccess: () => setPhase("done"),
     });
   };
@@ -63,7 +64,7 @@ export default function SEEExamSetupPage() {
         </div>
         <h2 className="text-xl font-bold text-gray-800">SEE Plan Created</h2>
         <p className="text-sm text-gray-500">
-          Semester {planResponse?.semester} · {routineHook.routine.length} course
+          Semester {routineHook.semester} · {routineHook.routine.length} course
           {routineHook.routine.length !== 1 ? "s" : ""} scheduled · rooms assigned.
         </p>
         <div className="flex items-center justify-center gap-3">
@@ -81,18 +82,23 @@ export default function SEEExamSetupPage() {
 
   // ───────────── Room assignment phase ─────────────
   if (phase === "rooms") {
+    const finalizeError =
+      roomAssignment.finalizeError instanceof Error
+        ? roomAssignment.finalizeError.message
+        : null;
     return (
       <RoomAssignStep
         slotAllocations={roomAssignment.slotAllocations}
         usedRoomsMap={roomAssignment.usedRoomsMap}
         avgStudentsPerClass={60}
         warnings={roomAssignment.roomWarnings}
-        isAssigning={roomAssignment.isAssigning}
+        isAssigning={roomAssignment.isFinalizing}
+        error={finalizeError}
         onAddRoom={roomAssignment.handleAddRoom}
         onRemoveRoom={roomAssignment.handleRemoveRoom}
         onApplySharing={roomAssignment.handleApplySharing}
         onRemoveSharing={roomAssignment.handleRemoveSharing}
-        onAssignRooms={handleAssignRooms}
+        onAssignRooms={handleFinalizeExam}
         onPrev={() => setPhase("routine")}
       />
     );
@@ -161,29 +167,13 @@ export default function SEEExamSetupPage() {
             onDelete={routineHook.removeEntry}
           />
 
-          {routineHook.finishError && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {routineHook.finishError instanceof Error
-                ? routineHook.finishError.message
-                : "Failed to finalize routine."}
-            </div>
-          )}
-
           <div className="sticky bottom-0 flex justify-end border-t border-gray-100 bg-gray-50/80 px-1 py-4 backdrop-blur">
             <Button
-              onClick={handleFinishRoutine}
-              disabled={!routineHook.canFinish || routineHook.isFinishing}
+              onClick={handleAdvanceToRooms}
+              disabled={!routineHook.canFinish}
             >
-              {routineHook.isFinishing ? (
-                <>
-                  <Loader2 className="mr-1 h-4 w-4 animate-spin" /> Finalizing...
-                </>
-              ) : (
-                <>
-                  Finish Routine & Assign Rooms
-                  <ChevronRight className="ml-1 h-4 w-4" />
-                </>
-              )}
+              Next: Assign Rooms
+              <ChevronRight className="ml-1 h-4 w-4" />
             </Button>
           </div>
         </>

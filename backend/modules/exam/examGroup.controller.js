@@ -27,8 +27,15 @@ const update = catchAsync(async (req, res) => {
 });
 
 const remove = catchAsync(async (req, res) => {
-  await examGroupService.deleteGroup(req.params.id);
-  res.status(200).json({ success: true, message: "Exam group deleted" });
+  const summary = await examGroupService.deleteGroup(req.params.id, {
+    actorId: req.user.id,
+    ipAddress: req.ip,
+  });
+  res.status(200).json({
+    success: true,
+    message: "Exam group deleted",
+    data: summary,
+  });
 });
 
 const getDutyStatus = catchAsync(async (req, res) => {

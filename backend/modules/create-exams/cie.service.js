@@ -9,6 +9,7 @@ const ExamRoom = require("../exam/examRoom.model");
 const CIEPlanEntry = require("./ciePlan.model");
 const AppError = require("../../shared/utils/AppError");
 const { generateExamDates } = require("./cie.utils");
+const { withOptionalTransaction } = require("../../shared/utils/withOptionalTransaction");
 
 /**
  * Fetch departments with their semester + courses for a given semester name.
@@ -312,10 +313,200 @@ const getRoomsGrouped = async () => {
   return grouped;
 };
 
+// ---------------------------------------------------------------------------
+// Finalize (single-call transactional creation)
+//
+// The frontend now buffers the entire draft (config + routine + room
+// assignments) and ships it in one POST after the user clicks the final
+// "Finish & Create Exam" button. Everything that used to happen across
+// `createPlan` + `assignRooms` now happens atomically here. If anything
+// inside the transaction fails, nothing is persisted — there is no
+// orphaned ExamGroup or ExamSchedule left behind.
+// ---------------------------------------------------------------------------
+
+const sameDay = (a, b) => {
+  const da = new Date(a);
+  const db = new Date(b);
+  da.setHours(0, 0, 0, 0);
+  db.setHours(0, 0, 0, 0);
+  return da.getTime() === db.getTime();
+};
+
+const finalizeCIEPlan = async (data, userId) => {
+  const {
+    examType,
+    semester,
+    startDate,
+    endDate,
+    shifts,
+    routine,
+    roomAssignments,
+  } = data;
+
+  // ---- Top-level validation (cheap, run before opening a session) ----
+
+  if (!examType) throw new AppError("Exam type is required", 400);
+  if (!semester) throw new AppError("Semester is required", 400);
+  if (!Array.isArray(shifts) || shifts.length === 0) {
+    throw new AppError("At least one shift is required", 400);
+  }
+  if (!Array.isArray(routine) || routine.length === 0) {
+    throw new AppError("Routine cannot be empty", 400);
+  }
+  if (!Array.isArray(roomAssignments) || roomAssignments.length === 0) {
+    throw new AppError("Room assignments are required before creating an exam", 400);
+  }
+
+  validateDates(startDate, endDate);
+
+  // Every routine slot (unique date+shift) must appear in roomAssignments;
+  // otherwise the caller is trying to finalize while a slot has zero rooms.
+  const routineSlotKeys = new Set(
+    routine.map((r) => `${r.date}|${r.shiftIndex}`),
+  );
+  const assignmentSlotKeys = new Set(
+    roomAssignments.map((a) => a.scheduleId), // frontend ships slotKey in this field
+  );
+  for (const key of routineSlotKeys) {
+    if (!assignmentSlotKeys.has(key)) {
+      throw new AppError(
+        "Cannot create exam until all schedules have rooms assigned.",
+        400,
+      );
+    }
+  }
+
+  const duplicate = await ExamGroup.findOne({
+    examType,
+    semester: parseInt(semester, 10),
+    isActive: true,
+    $or: [
+      {
+        startDate: { $lte: new Date(endDate) },
+        endDate: { $gte: new Date(startDate) },
+      },
+    ],
+  });
+  if (duplicate) {
+    throw new AppError(
+      `An ${examType} exam for Semester ${semester} already exists with overlapping dates`,
+      409,
+    );
+  }
+
+  // ---- Transactional persistence ----
+
+  return withOptionalTransaction(async (session) => {
+    const sessionOpt = session ? { session } : {};
+
+    const [examGroup] = await ExamGroup.create(
+      [
+        {
+          examType,
+          semester: parseInt(semester, 10),
+          startDate: new Date(startDate),
+          endDate: new Date(endDate),
+          createdBy: userId,
+        },
+      ],
+      sessionOpt,
+    );
+
+    // 1 ExamSchedule per unique (date, shiftIndex). Keep a slotKey → _id map
+    // so room assignments can resolve their schedule ref.
+    const slotKeyToScheduleId = new Map();
+    for (const entry of routine) {
+      const slotKey = `${entry.date}|${entry.shiftIndex}`;
+      if (slotKeyToScheduleId.has(slotKey)) continue;
+
+      const shift = shifts[entry.shiftIndex];
+      if (!shift) {
+        throw new AppError(`Routine references unknown shiftIndex ${entry.shiftIndex}`, 400);
+      }
+
+      const [schedule] = await ExamSchedule.create(
+        [
+          {
+            examGroup: examGroup._id,
+            date: new Date(entry.date),
+            startTime: shift.startTime,
+            endTime: shift.endTime,
+          },
+        ],
+        sessionOpt,
+      );
+      slotKeyToScheduleId.set(slotKey, schedule._id);
+    }
+
+    // CIEPlanEntries — one per (schedule × department × course).
+    for (const entry of routine) {
+      const scheduleId = slotKeyToScheduleId.get(
+        `${entry.date}|${entry.shiftIndex}`,
+      );
+      for (const [deptId, courseId] of Object.entries(entry.assignments || {})) {
+        if (!courseId) continue;
+        await CIEPlanEntry.create(
+          [
+            {
+              examGroup: examGroup._id,
+              schedule: scheduleId,
+              department: deptId,
+              course: courseId,
+            },
+          ],
+          sessionOpt,
+        );
+      }
+    }
+
+    // Group room assignments by (schedule, room); merge departments so we
+    // don't violate the (schedule, room) unique index on ExamRoom.
+    const roomGroups = new Map();
+    for (const a of roomAssignments) {
+      const scheduleId = slotKeyToScheduleId.get(a.scheduleId);
+      if (!scheduleId) {
+        throw new AppError(
+          `Room assignment references unknown slot ${a.scheduleId}`,
+          400,
+        );
+      }
+      const key = `${scheduleId}|${a.roomId}`;
+      if (!roomGroups.has(key)) {
+        roomGroups.set(key, {
+          schedule: scheduleId,
+          room: a.roomId,
+          departments: new Set(),
+        });
+      }
+      roomGroups.get(key).departments.add(a.departmentCode);
+    }
+
+    for (const group of roomGroups.values()) {
+      await ExamRoom.create(
+        [
+          {
+            schedule: group.schedule,
+            room: group.room,
+            departments: Array.from(group.departments),
+          },
+        ],
+        sessionOpt,
+      );
+    }
+
+    return {
+      ...examGroup.toObject(),
+      schedulesCreated: slotKeyToScheduleId.size,
+      roomsCreated: roomGroups.size,
+    };
+  });
+};
+
 module.exports = {
   getDepartmentsData,
   calculateDates,
   createPlan,
   assignRooms,
   getRoomsGrouped,
+  finalizeCIEPlan,
 };

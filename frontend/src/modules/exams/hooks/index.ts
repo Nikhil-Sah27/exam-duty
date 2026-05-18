@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useExamDeletionCleanup } from "@/modules/shared/exam-cleanup/hooks/useExamDeletionCleanup";
 import {
   fetchExams,
   createExam,
@@ -58,11 +59,14 @@ export const useUpdateExam = () => {
 };
 
 export const useCancelExam = () => {
-  const queryClient = useQueryClient();
+  const { invalidateAll } = useExamDeletionCleanup();
   return useMutation({
     mutationFn: (id: string) => cancelExam(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: EXAMS_KEY });
+      // Legacy single-Exam cancel runs the same cascade on the backend
+      // (release duties, cancel change requests, notify, audit) — so the
+      // frontend has to refresh the same wide set of caches.
+      invalidateAll();
     },
   });
 };
@@ -124,11 +128,13 @@ export const useUpdateExamGroup = () => {
 };
 
 export const useDeleteExamGroup = () => {
-  const queryClient = useQueryClient();
+  const { invalidateAll } = useExamDeletionCleanup();
   return useMutation({
     mutationFn: (id: string) => deleteExamGroup(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: EXAM_GROUPS_KEY });
+      // Backend cascade releases duties + cancels change requests + emits
+      // notifications. Refresh every cache that could be holding stale views.
+      invalidateAll();
     },
   });
 };
@@ -150,13 +156,15 @@ export const useCreateSchedule = () => {
 
 export const useDeleteSchedule = (examGroupId: string) => {
   const queryClient = useQueryClient();
+  const { invalidateAll } = useExamDeletionCleanup();
   return useMutation({
     mutationFn: (id: string) => deleteSchedule(id),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: examGroupDetailsKey(examGroupId),
       });
-      queryClient.invalidateQueries({ queryKey: EXAM_GROUPS_KEY });
+      // Backend cascade — release duties, cancel change requests, notify.
+      invalidateAll();
     },
   });
 };
@@ -190,13 +198,15 @@ export const useAddExamRoom = (examGroupId: string) => {
 
 export const useRemoveExamRoom = (examGroupId: string) => {
   const queryClient = useQueryClient();
+  const { invalidateAll } = useExamDeletionCleanup();
   return useMutation({
     mutationFn: (id: string) => removeExamRoom(id),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: examGroupDetailsKey(examGroupId),
       });
-      queryClient.invalidateQueries({ queryKey: EXAM_GROUPS_KEY });
+      // Backend cascade — release duties, cancel change requests, notify.
+      invalidateAll();
     },
   });
 };

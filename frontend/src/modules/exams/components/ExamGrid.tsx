@@ -1,35 +1,32 @@
 import { Plus } from "lucide-react";
-import { ExamGroup, ExamGroupStatus } from "../types";
-import ExamCard from "./ExamCard";
+import { ExamGroup } from "../types";
+import { getExamGroupStatus } from "@/modules/shared/exams/utils/examStatusUtils";
+import { groupExamsByCategory } from "@/modules/shared/exams/utils/examGroupingUtils";
+import CIEExamCard from "./CIEExamCard";
+import SEEExamCard from "./SEEExamCard";
+import ExamCategorySection from "./ExamCategorySection";
 
 interface ExamGridProps {
   groups: ExamGroup[];
+  /**
+   * Active type filter (`""` = all, otherwise one of `IA1` | `IA2` | `IA3` | `SEE`).
+   * Controls which top-level section(s) render.
+   */
+  selectedType: string;
   onAddClick: () => void;
   onDelete: (group: ExamGroup) => void;
 }
 
-function getGroupStatus(group: ExamGroup): ExamGroupStatus {
-  const now = new Date();
-  const start = new Date(group.startDate);
-  const end = new Date(group.endDate);
-
-  // Set time to start of day for date-only comparison
-  now.setHours(0, 0, 0, 0);
-  start.setHours(0, 0, 0, 0);
-  end.setHours(23, 59, 59, 999);
-
-  if (now < start) return "upcoming";
-  if (now > end) return "completed";
-  return "ongoing";
-}
-
-const STATUS_PRIORITY: Record<ExamGroupStatus, number> = {
-  upcoming: 0,
-  ongoing: 1,
-  completed: 2,
-};
-
-export default function ExamGrid({ groups, onAddClick, onDelete }: ExamGridProps) {
+// Top-level Exams listing. Owns the CIE vs SEE split, the section-level
+// empty states, and the card-variant choice. Internal sorting (status
+// priority + nearest date) is delegated to ExamCategorySection /
+// ExamStatusGroup so the grid itself stays declarative.
+export default function ExamGrid({
+  groups,
+  selectedType,
+  onAddClick,
+  onDelete,
+}: ExamGridProps) {
   if (groups.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 py-16">
@@ -44,25 +41,64 @@ export default function ExamGrid({ groups, onAddClick, onDelete }: ExamGridProps
     );
   }
 
-  // Sort by priority: upcoming → ongoing → completed, then by startDate
-  const sorted = [...groups].sort((a, b) => {
-    const statusA = getGroupStatus(a);
-    const statusB = getGroupStatus(b);
-    const priorityDiff = STATUS_PRIORITY[statusA] - STATUS_PRIORITY[statusB];
-    if (priorityDiff !== 0) return priorityDiff;
-    return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
-  });
+  const categorized = groupExamsByCategory(groups);
+
+  // Filter routing:
+  //   • selectedType === "SEE"  → only SEE section
+  //   • selectedType === "IA1"  → only CIE section, with IA2/IA3 buckets emptied
+  //   • selectedType === ""     → both sections (default)
+  const showCIE = selectedType === "" || selectedType.startsWith("IA");
+  const showSEE = selectedType === "" || selectedType === "SEE";
+
+  const filteredCie = selectedType.startsWith("IA")
+    ? {
+        IA1: selectedType === "IA1" ? categorized.cie.IA1 : [],
+        IA2: selectedType === "IA2" ? categorized.cie.IA2 : [],
+        IA3: selectedType === "IA3" ? categorized.cie.IA3 : [],
+      }
+    : categorized.cie;
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      {sorted.map((group) => (
-        <ExamCard
-          key={group._id}
-          group={group}
-          status={getGroupStatus(group)}
-          onDelete={onDelete}
+    <div className="space-y-10">
+      {showCIE && (
+        <ExamCategorySection
+          variant="cie"
+          title="CIE — Internal Exams"
+          subtitle="Continuous Internal Evaluation · IA1, IA2, IA3"
+          data={{ kind: "cie", groups: filteredCie }}
+          renderCard={(g) => (
+            <CIEExamCard
+              key={g._id}
+              group={g}
+              status={getExamGroupStatus(g)}
+              onDelete={onDelete}
+            />
+          )}
+          emptyMessage={
+            selectedType && selectedType.startsWith("IA")
+              ? `No ${selectedType} exams available.`
+              : "No internal exams available."
+          }
         />
-      ))}
+      )}
+
+      {showSEE && (
+        <ExamCategorySection
+          variant="see"
+          title="SEE — External Exams"
+          subtitle="Semester End Examinations"
+          data={{ kind: "see", groups: categorized.see }}
+          renderCard={(g) => (
+            <SEEExamCard
+              key={g._id}
+              group={g}
+              status={getExamGroupStatus(g)}
+              onDelete={onDelete}
+            />
+          )}
+          emptyMessage="No SEE exams scheduled."
+        />
+      )}
     </div>
   );
 }

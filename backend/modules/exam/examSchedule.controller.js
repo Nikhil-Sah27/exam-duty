@@ -12,8 +12,15 @@ const getByGroup = catchAsync(async (req, res) => {
 });
 
 const remove = catchAsync(async (req, res) => {
-  await examScheduleService.deleteSchedule(req.params.id);
-  res.status(200).json({ success: true, message: "Schedule deleted" });
+  const summary = await examScheduleService.deleteSchedule(req.params.id, {
+    actorId: req.user.id,
+    ipAddress: req.ip,
+  });
+  res.status(200).json({
+    success: true,
+    message: "Schedule deleted",
+    data: summary,
+  });
 });
 
 module.exports = { create, getByGroup, remove };
