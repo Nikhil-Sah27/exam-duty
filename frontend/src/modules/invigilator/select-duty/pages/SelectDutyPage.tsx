@@ -114,9 +114,14 @@ export default function SelectDutyPage() {
                 />
               ))}
               {filteredSlots.length === 0 && (
-                <p className="col-span-full py-8 text-center text-sm text-gray-400">
-                  No slots match the current filters.
-                </p>
+                <div className="col-span-full rounded-xl border-2 border-dashed border-gray-200 py-10 text-center">
+                  <p className="text-sm font-medium text-gray-600">
+                    No available duties to select.
+                  </p>
+                  <p className="mt-1 text-xs text-gray-400">
+                    Completed or unavailable duties are hidden.
+                  </p>
+                </div>
               )}
             </div>
           ) : (

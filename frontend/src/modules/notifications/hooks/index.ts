@@ -5,6 +5,8 @@ import {
   fetchUnreadCount,
   markAsRead,
   markAllAsRead,
+  deleteNotification,
+  deleteAllNotifications,
 } from "../services";
 
 const NOTIFICATIONS_KEY = ["notifications"];
@@ -42,6 +44,30 @@ export const useMarkAllAsRead = () => {
 
   return useMutation({
     mutationFn: () => markAllAsRead(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_KEY });
+      queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_KEY });
+    },
+  });
+};
+
+export const useDeleteNotification = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => deleteNotification(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_KEY });
+      queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_KEY });
+    },
+  });
+};
+
+export const useDeleteAllNotifications = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => deleteAllNotifications(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_KEY });
       queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_KEY });

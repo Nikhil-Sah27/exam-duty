@@ -9,6 +9,7 @@ export type {
   ExamGroupDetails,
   ExamSchedule,
   ExamRoomAssignment,
+  ScheduleCourse,
   RoomDutyFlags,
   DutyStatus,
   DutyStatusMap,

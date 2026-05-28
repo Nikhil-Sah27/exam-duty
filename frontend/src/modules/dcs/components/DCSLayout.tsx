@@ -1,0 +1,29 @@
+import { Navigate, Outlet } from "react-router-dom";
+import AuthGuard from "@/shared/components/AuthGuard";
+import { useAuthStore } from "@/shared/store/auth.store";
+import { getRoleConfig } from "@/modules/shared/role-config/roleConfig";
+import InvigilatorHeader from "@/modules/invigilator/components/InvigilatorHeader";
+import DCSSidebar from "./DCSSidebar";
+
+/**
+ * DCS dashboard shell. Mirrors InvigilatorLayout/RSLayout: same AuthGuard,
+ * same shared Header (notifications + user + logout), DCSSidebar in place.
+ */
+export default function DCSLayout() {
+  const user = useAuthStore((s) => s.user);
+
+  if (user && user.role !== "dcs") {
+    const elsewhere = getRoleConfig(user.role);
+    return <Navigate to={elsewhere?.defaultPath || "/"} replace />;
+  }
+
+  return (
+    <AuthGuard>
+      <InvigilatorHeader />
+      <DCSSidebar />
+      <main className="ml-60 pt-16 p-6 transition-all duration-300">
+        <Outlet />
+      </main>
+    </AuthGuard>
+  );
+}

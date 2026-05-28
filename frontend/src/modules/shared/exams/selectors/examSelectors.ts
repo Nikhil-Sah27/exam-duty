@@ -4,6 +4,7 @@ import type {
   DutyStatusMap,
   RoomDutyFlags,
 } from "../types/exam.types";
+import { isDutySelectable } from "@/modules/duties/utils/dutyStatusFilter";
 
 export interface AvailableDutySlot {
   slotId: string; // `${scheduleId}:${examRoomId}`
@@ -31,7 +32,11 @@ export interface AvailableDutySlot {
   flags: RoomDutyFlags;
 }
 
-/** Keep only exam groups that aren't completed. */
+/**
+ * Keep only exam groups that still have at least one selectable schedule
+ * (`endDate` covers anything later than today). Per-schedule eligibility is
+ * applied in `selectDutySlotsForGroup` via the shared lifecycle filter.
+ */
 export function selectActiveExamGroups(groups: ExamGroup[]): ExamGroup[] {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
@@ -54,8 +59,10 @@ interface BuildSlotsInput {
  * occupancy; the caller filters out FULL based on the logged-in user's role
  * (e.g. `slot.flags.invigilatorAssigned` for invigilators, `rsAssigned` for RS).
  *
- * Filtering rules applied here (per spec):
- *  - drop completed schedules (date strictly in the past)
+ * Filtering rules applied here:
+ *  - drop schedules that aren't in a selectable lifecycle state (Upcoming or
+ *    Ongoing) — delegated to the shared `isDutySelectable` so Invigilator/RS
+ *    visibility matches DCS and any future teacher role
  *  - drop schedules with no rooms (would yield zero slots anyway)
  */
 export function selectDutySlotsForGroup({
@@ -63,15 +70,18 @@ export function selectDutySlotsForGroup({
   details,
   dutyStatus,
 }: BuildSlotsInput): AvailableDutySlot[] {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
   const slots: AvailableDutySlot[] = [];
 
   for (const schedule of details.schedules) {
-    const scheduleDate = new Date(schedule.date);
-    scheduleDate.setHours(0, 0, 0, 0);
-    if (scheduleDate < today) continue;
+    if (
+      !isDutySelectable({
+        date: schedule.date,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime,
+      })
+    ) {
+      continue;
+    }
     if (schedule.rooms.length === 0) continue;
 
     for (const examRoom of schedule.rooms) {

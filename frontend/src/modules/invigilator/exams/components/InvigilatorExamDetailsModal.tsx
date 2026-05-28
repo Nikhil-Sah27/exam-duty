@@ -15,6 +15,7 @@ import { useDutySelection } from "@/modules/invigilator/duties/hooks/useDutySele
 import DutySelectionStatus from "@/modules/invigilator/duties/components/DutySelectionStatus";
 import DutySelectionButton from "@/modules/invigilator/duties/components/DutySelectionButton";
 import type { SlotContext } from "@/modules/invigilator/duties/utils/dutySelectionUtils";
+import CourseSummary from "@/modules/shared/exams/components/CourseSummary";
 
 function formatTime(time: string): string {
   const [h, m] = time.split(":").map(Number);
@@ -180,6 +181,15 @@ export default function InvigilatorExamDetailsModal({
         </div>
 
         <div className="space-y-4 px-5 py-4">
+          {/* Subject / course block — placed right under the room header per
+              spec so the user knows what is being written before they read
+              anything else. Narrowed to the room's department(s) when the
+              schedule carries multiple. */}
+          <CourseSummary
+            courses={schedule.courses}
+            forDepartments={departments}
+          />
+
           {showMineBanner && (
             <div className="rounded-lg border-2 border-blue-300 bg-blue-50 px-4 py-3">
               <div className="flex items-center gap-2 text-blue-700">

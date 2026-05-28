@@ -6,6 +6,7 @@ const examDeletionService = require("../exam-cleanup/services/examDeletionServic
 
 const ExamGroup = require("./examGroup.model");
 const Duty = require("../duty/duty.model");
+const CIEPlanEntry = require("../create-exams/ciePlan.model");
 
 const createGroup = async (data, userId) => {
   if (new Date(data.endDate) <= new Date(data.startDate)) {
@@ -70,7 +71,13 @@ const deleteGroup = async (id, actor = {}) => {
 };
 
 /**
- * Get full details for exam group: group info + schedules + rooms per schedule
+ * Get full details for exam group: group info + schedules + rooms per schedule.
+ *
+ * Each schedule additionally carries a `courses` array — one entry per
+ * (department × course) that's tied to that schedule via CIEPlanEntry. The
+ * UI uses this to display "what subject is being written in this room?" in
+ * the room-details modal. Field is purely additive (existing consumers of
+ * this endpoint ignore it).
  */
 const getGroupDetails = async (id) => {
   const group = await examGroupRepo.findById(id);
@@ -79,6 +86,29 @@ const getGroupDetails = async (id) => {
   const schedules = await examScheduleRepo.findByExamGroup(id);
   const scheduleIds = schedules.map((s) => s._id);
   const allRooms = await examRoomRepo.findBySchedules(scheduleIds);
+
+  // Pull every plan entry for this exam group in one query and group by
+  // schedule. Populating the course gives us code + name without a second
+  // round trip. The department ref is kept as a code via populate to match
+  // the (string) codes already stored on ExamRoom.departments.
+  const planEntries = await CIEPlanEntry.find({ examGroup: id })
+    .populate({ path: "course", select: "code name credits courseType" })
+    .populate({ path: "department", select: "code name" });
+
+  const coursesBySchedule = new Map();
+  for (const entry of planEntries) {
+    const key = entry.schedule.toString();
+    if (!coursesBySchedule.has(key)) coursesBySchedule.set(key, []);
+    coursesBySchedule.get(key).push({
+      courseId: entry.course?._id,
+      courseCode: entry.course?.code || null,
+      courseTitle: entry.course?.name || null,
+      credits: entry.course?.credits || null,
+      courseType: entry.course?.courseType || null,
+      departmentCode: entry.department?.code || null,
+      departmentName: entry.department?.name || null,
+    });
+  }
 
   // Map rooms to their schedule
   const roomsBySchedule = new Map();
@@ -91,6 +121,7 @@ const getGroupDetails = async (id) => {
   const schedulesWithRooms = schedules.map((s) => ({
     ...s.toObject(),
     rooms: roomsBySchedule.get(s._id.toString()) || [],
+    courses: coursesBySchedule.get(s._id.toString()) || [],
   }));
 
   return {

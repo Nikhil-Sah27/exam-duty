@@ -38,6 +38,16 @@ const markAllAsRead = (recipientId) => {
   );
 };
 
+const deleteById = (id) => {
+  return Notification.findByIdAndDelete(id);
+};
+
+// Intrinsically recipient-scoped — never deletes another user's notifications,
+// even if a future caller forgets to verify ownership upstream.
+const deleteAllByRecipient = (recipientId) => {
+  return Notification.deleteMany({ recipient: recipientId });
+};
+
 module.exports = {
   create,
   createMany,
@@ -46,4 +56,6 @@ module.exports = {
   findById,
   markAsRead,
   markAllAsRead,
+  deleteById,
+  deleteAllByRecipient,
 };

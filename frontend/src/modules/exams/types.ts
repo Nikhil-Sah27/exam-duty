@@ -37,6 +37,22 @@ export interface ExamGroup {
   updatedAt: string;
 }
 
+/**
+ * What course(s) are being written in this exam slot. Sourced from
+ * CIEPlanEntry on the backend and surfaced as an additive field by
+ * `/api/exam-groups/:id/details`. Multi-department schedules carry one
+ * entry per (department × course); single-department flows carry one entry.
+ */
+export interface ScheduleCourse {
+  courseId?: string;
+  courseCode: string | null;
+  courseTitle: string | null;
+  credits: number | null;
+  courseType: "core" | "professional_elective" | "open_elective" | null;
+  departmentCode: string | null;
+  departmentName: string | null;
+}
+
 export interface ExamSchedule {
   _id: string;
   examGroup: string;
@@ -44,6 +60,9 @@ export interface ExamSchedule {
   startTime: string;
   endTime: string;
   rooms: ExamRoomAssignment[];
+  /** Per-(department × course) plan entries for this schedule. Empty when
+   *  the plan hasn't been wired (legacy single-exam flow). */
+  courses?: ScheduleCourse[];
   createdAt: string;
   updatedAt: string;
 }

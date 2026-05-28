@@ -47,6 +47,7 @@ app.use("/api/departments", require("./modules/department/department.routes"));
 app.use("/api/infrastructure", require("./modules/infrastructure/infrastructure.routes"));
 app.use("/api/reports", require("./modules/report/report.routes"));
 app.use("/api/audit", require("./modules/audit/audit.routes"));
+app.use("/api/dcs", require("./modules/dcs/dcsGroup.routes"));
 
 // Global error handler (must be after all routes)
 app.use(errorHandler);

@@ -17,6 +17,7 @@ const ExamGroup = require("../../exam/examGroup.model");
 const ExamSchedule = require("../../exam/examSchedule.model");
 const ExamRoom = require("../../exam/examRoom.model");
 const Exam = require("../../exam/exam.model");
+const dcsGroupRepository = require("../../dcs/dcsGroup.repository");
 
 const { releaseDuties } = require("./dutyReleaseService");
 const { notifyReleasedDuties } = require("./notificationCleanupService");
@@ -147,6 +148,10 @@ const deleteExamGroupWithCleanup = async (
       affectedExamRooms: scope.examRoomIds,
     },
     finalize: async (session) => {
+      // DCS groups belong to the exam-group lifecycle — drop them alongside
+      // schedules/rooms. Any duties they generated were already released by
+      // the cascade above via the Duty refs in scope.duties.
+      await dcsGroupRepository.deleteByExamGroups([groupId], session);
       if (scope.examRoomIds.length > 0) {
         await ExamRoom.deleteMany(
           { _id: { $in: scope.examRoomIds } },
@@ -191,6 +196,7 @@ const deleteScheduleWithCleanup = async (
       affectedExamRooms: scope.examRoomIds,
     },
     finalize: async (session) => {
+      await dcsGroupRepository.deleteBySchedules([scheduleId], session);
       if (scope.examRoomIds.length > 0) {
         await ExamRoom.deleteMany(
           { _id: { $in: scope.examRoomIds } },

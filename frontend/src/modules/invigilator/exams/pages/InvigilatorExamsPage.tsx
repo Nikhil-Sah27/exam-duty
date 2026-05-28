@@ -1,28 +1,7 @@
 import { useState } from "react";
-import type {
-  ExamGroup,
-  ExamGroupStatus,
-} from "@/modules/shared/exams/types/exam.types";
-import { getExamGroupStatus } from "@/modules/shared/exams/utils/examStatusUtils";
 import ExamFilters from "@/modules/exams/components/ExamFilters";
+import ExamGroupSection from "@/modules/shared/exams/components/ExamGroupSection";
 import { useInvigilatorExamView } from "../hooks/useInvigilatorExams";
-import InvigilatorExamCard from "../components/InvigilatorExamCard";
-
-const STATUS_PRIORITY: Record<ExamGroupStatus, number> = {
-  upcoming: 0,
-  ongoing: 1,
-  completed: 2,
-};
-
-function sortByStatusThenDate(groups: ExamGroup[]): ExamGroup[] {
-  return [...groups].sort((a, b) => {
-    const sa = getExamGroupStatus(a);
-    const sb = getExamGroupStatus(b);
-    const diff = STATUS_PRIORITY[sa] - STATUS_PRIORITY[sb];
-    if (diff !== 0) return diff;
-    return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
-  });
-}
 
 export default function InvigilatorExamsPage() {
   const { data: groups, isLoading, error } = useInvigilatorExamView();
@@ -30,12 +9,6 @@ export default function InvigilatorExamsPage() {
   const [filterSemester, setFilterSemester] = useState("");
 
   const allGroups = groups || [];
-  const filtered = allGroups.filter((g) => {
-    if (filterType && g.examType !== filterType) return false;
-    if (filterSemester && g.semester !== Number(filterSemester)) return false;
-    return true;
-  });
-  const sorted = sortByStatusThenDate(filtered);
 
   return (
     <div className="space-y-6">
@@ -72,22 +45,14 @@ export default function InvigilatorExamsPage() {
         </div>
       )}
 
-      {!isLoading && allGroups.length > 0 && sorted.length === 0 && (
-        <div className="rounded-xl border-2 border-dashed border-gray-200 py-12 text-center">
-          <p className="text-sm text-gray-500">No exams match the current filters.</p>
-        </div>
-      )}
-
-      {sorted.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {sorted.map((g) => (
-            <InvigilatorExamCard
-              key={g._id}
-              group={g}
-              status={getExamGroupStatus(g)}
-            />
-          ))}
-        </div>
+      {!isLoading && allGroups.length > 0 && (
+        <ExamGroupSection
+          exams={allGroups}
+          selectedType={filterType}
+          selectedSemester={filterSemester}
+          // Relative href — works for both /invigilator/exams and /rs/exams.
+          getCardHref={(g) => g._id}
+        />
       )}
     </div>
   );

@@ -53,8 +53,20 @@ const findTeacherConflict = (teacherId, date, startTime, endTime, excludeId) => 
   return Duty.findOne(filter);
 };
 
-// Conflict check: room already occupied at same date/time
-const findRoomConflict = (room, date, startTime, endTime, excludeId) => {
+/**
+ * Conflict check: is this room's role slot already occupied at this time?
+ *
+ * Each room has up to three independent role slots — DCS, RS, and Invigilator.
+ * One role being filled does NOT block another (a room with a DCS supervisor
+ * still needs an invigilator). When `role` is supplied, the conflict scan is
+ * scoped to that role's existing duties. When omitted (legacy callers), the
+ * old role-agnostic behaviour is preserved.
+ *
+ * Returns the first conflicting Duty (populated with the teacher's role +
+ * name) so the caller can build a precise error message, or `null` if the
+ * slot is free for the given role.
+ */
+const findRoomConflict = async (room, date, startTime, endTime, role, excludeId) => {
   const filter = {
     room,
     date,
@@ -64,7 +76,17 @@ const findRoomConflict = (room, date, startTime, endTime, excludeId) => {
     ],
   };
   if (excludeId) filter._id = { $ne: excludeId };
-  return Duty.findOne(filter);
+
+  // Legacy callers (no role) keep old "any role conflicts" semantics.
+  if (!role) {
+    return Duty.findOne(filter).populate("teacher", "name role");
+  }
+
+  // Pull every duty for this room+time, then filter by the role we're
+  // checking. Cardinality is bounded by the number of distinct roles per
+  // room (≤ 3), so the in-memory filter is trivial.
+  const duties = await Duty.find(filter).populate("teacher", "name role");
+  return duties.find((d) => d.teacher?.role === role) || null;
 };
 
 module.exports = {

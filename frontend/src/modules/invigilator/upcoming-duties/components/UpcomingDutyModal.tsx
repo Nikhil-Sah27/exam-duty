@@ -1,5 +1,6 @@
 import { X, Calendar, Clock, DoorOpen, BookOpen, UserCheck } from "lucide-react";
 import type { Duty } from "@/modules/duties/types";
+import { getTypeColor } from "@/modules/shared/exams/utils/examStatusUtils";
 import {
   describeExam,
   describeRoom,
@@ -12,13 +13,8 @@ import {
 import UpcomingDutyStatusBadge, {
   type UpcomingDutyStatus,
 } from "./UpcomingDutyStatusBadge";
-
-const TYPE_COLORS: Record<string, string> = {
-  IA1: "bg-violet-600",
-  IA2: "bg-indigo-600",
-  IA3: "bg-blue-600",
-  SEE: "bg-rose-600",
-};
+import { useExamGroupDetails } from "@/modules/shared/exams/hooks/useSharedExamData";
+import CourseSummary from "@/modules/shared/exams/components/CourseSummary";
 
 function Detail({
   icon,
@@ -49,6 +45,10 @@ interface UpcomingDutyModalProps {
 }
 
 export default function UpcomingDutyModal({ open, duty, onClose }: UpcomingDutyModalProps) {
+  // Hook calls must run unconditionally — modal short-circuits below on close.
+  const groupId = duty?.examSchedule?.examGroup?._id ?? null;
+  const detailsQuery = useExamGroupDetails(open ? groupId : null);
+
   if (!open || !duty) return null;
 
   const examLabel = describeExam(duty);
@@ -56,8 +56,16 @@ export default function UpcomingDutyModal({ open, duty, onClose }: UpcomingDutyM
   const depts = getDepartments(duty);
   const semester = getSemester(duty);
   const examType = String(getExamType(duty));
-  const typeColor = TYPE_COLORS[examType] || "bg-gray-800";
+  const typeColor = getTypeColor(examType);
   const status = duty.status as UpcomingDutyStatus;
+
+  // Find the schedule course list, scoped to the duty's room's departments
+  // so the user sees only the relevant paper (not every dept's paper that
+  // happens to share this time slot).
+  const matchingSchedule = detailsQuery.data?.schedules?.find(
+    (s) => s._id === duty.examSchedule?._id,
+  );
+  const scheduleCourses = matchingSchedule?.courses;
 
   // Reporting time = 15 minutes before start. A conventional default; the
   // actual policy can be wired in later via config/backend.
@@ -101,6 +109,11 @@ export default function UpcomingDutyModal({ open, duty, onClose }: UpcomingDutyM
         </div>
 
         <div className="space-y-4 px-5 py-4">
+          {/* Subject / course block — surfaced up top so the user knows the
+              paper before any logistics. Narrowed to the duty room's
+              departments. */}
+          <CourseSummary courses={scheduleCourses} forDepartments={depts} />
+
           <div className="rounded-lg border-2 border-blue-200 bg-blue-50 px-4 py-3">
             <div className="flex items-center gap-2 text-blue-700">
               <UserCheck className="h-4 w-4" />

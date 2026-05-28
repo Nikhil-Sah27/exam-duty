@@ -1,6 +1,7 @@
 import { X, CheckCircle2, AlertCircle } from "lucide-react";
 import type { ExamRoomAssignment, ExamSchedule, RoomDutyFlags, DutyStatus } from "../types";
 import { getStatusLabel, getStatusColors } from "../utils/dutyStatusUtils";
+import CourseSummary from "@/modules/shared/exams/components/CourseSummary";
 
 interface DutyStatusModalProps {
   open: boolean;
@@ -85,6 +86,14 @@ export default function DutyStatusModal({
         </div>
 
         <div className="space-y-4 px-5 py-4">
+          {/* Subject / course — shared block; narrowed to this room's
+              department(s) so multi-dept schedules show only the relevant
+              paper. */}
+          <CourseSummary
+            courses={schedule.courses}
+            forDepartments={departments}
+          />
+
           {/* Exam Info */}
           <div className="rounded-lg bg-gray-50 px-3 py-2.5">
             <div className="grid grid-cols-2 gap-2 text-xs">

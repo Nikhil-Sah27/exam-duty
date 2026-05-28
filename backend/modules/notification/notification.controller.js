@@ -25,4 +25,23 @@ const markAllAsRead = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, message: "All notifications marked as read" });
 });
 
-module.exports = { getMine, getUnreadCount, markAsRead, markAllAsRead };
+const remove = catchAsync(async (req, res) => {
+  const result = await notificationService.deleteNotification(
+    req.params.id, req.user.id
+  );
+  res.status(200).json({ success: true, ...result });
+});
+
+const removeAll = catchAsync(async (req, res) => {
+  const result = await notificationService.deleteAllNotifications(req.user.id);
+  res.status(200).json({ success: true, ...result });
+});
+
+module.exports = {
+  getMine,
+  getUnreadCount,
+  markAsRead,
+  markAllAsRead,
+  remove,
+  removeAll,
+};

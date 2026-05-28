@@ -1,5 +1,6 @@
 import { Calendar, Clock, DoorOpen, UserCheck } from "lucide-react";
 import type { Duty } from "@/modules/duties/types";
+import { getTypeColor } from "@/modules/shared/exams/utils/examStatusUtils";
 import {
   describeExam,
   describeRoom,
@@ -27,13 +28,6 @@ function getDeptColor(d: string): string {
   return DEPT_COLORS[d.toUpperCase()] || "bg-gray-100 text-gray-600";
 }
 
-const TYPE_COLORS: Record<string, string> = {
-  IA1: "bg-violet-600",
-  IA2: "bg-indigo-600",
-  IA3: "bg-blue-600",
-  SEE: "bg-rose-600",
-};
-
 interface UpcomingDutyCardProps {
   duty: Duty;
   onClick: (duty: Duty) => void;
@@ -45,7 +39,7 @@ export default function UpcomingDutyCard({ duty, onClick }: UpcomingDutyCardProp
   const depts = getDepartments(duty);
   const examType = String(getExamType(duty));
   const semester = getSemester(duty);
-  const typeColor = TYPE_COLORS[examType] || "bg-gray-800";
+  const typeColor = getTypeColor(examType);
   const status = duty.status as UpcomingDutyStatus;
 
   return (

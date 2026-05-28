@@ -10,6 +10,12 @@ const { emit } = require("../notification/notification.emitter");
 
 // ---------- Conflict validation ----------
 
+const ROLE_LABELS = {
+  dcs: "DCS",
+  rs: "RS",
+  invigilator: "invigilator",
+};
+
 const validateConflicts = async (teacherId, room, date, startTime, endTime, excludeId) => {
   const teacherConflict = await dutyRepository.findTeacherConflict(
     teacherId, date, startTime, endTime, excludeId
@@ -21,12 +27,19 @@ const validateConflicts = async (teacherId, room, date, startTime, endTime, excl
     );
   }
 
+  // Look up the caller's role so the room-conflict scan is scoped to the
+  // SAME role slot. Without this, a DCS-assigned room would block an
+  // invigilator from claiming the (independent) invigilator slot.
+  const teacher = await User.findById(teacherId).select("role");
+  const role = teacher?.role || null;
+
   const roomConflict = await dutyRepository.findRoomConflict(
-    room, date, startTime, endTime, excludeId
+    room, date, startTime, endTime, role, excludeId
   );
   if (roomConflict) {
+    const conflictingRole = ROLE_LABELS[roomConflict.teacher?.role] || "another teacher";
     throw new AppError(
-      `Room ${room} is already assigned to another invigilator from ${roomConflict.startTime}–${roomConflict.endTime} on this date`,
+      `Room ${room} is already assigned to another ${conflictingRole} from ${roomConflict.startTime}–${roomConflict.endTime} on this date`,
       409
     );
   }
@@ -43,7 +56,8 @@ const validateExam = async (examId) => {
 /**
  * Validate a slot identified by (ExamSchedule._id, ExamRoom._id). Returns the
  * resolved schedule + examRoom (room populated). Throws if any link is broken
- * or the group is already completed.
+ * or the slot's lifecycle no longer permits assignment (past schedule, or
+ * the parent exam group fully completed).
  */
 const validateScheduleSlot = async (scheduleId, examRoomId) => {
   if (!scheduleId) throw new AppError("examSchedule is required", 400);
@@ -60,9 +74,30 @@ const validateScheduleSlot = async (scheduleId, examRoomId) => {
     throw new AppError("Exam room does not belong to the given schedule", 400);
   }
 
+  // Per-schedule cutoff. Mirrors the frontend lifecycle filter so a forged
+  // request for a past schedule can't slip through after the UI hides it.
+  // Same-day duties stay claimable until their endTime passes.
+  const now = new Date();
+  const day = new Date(schedule.date);
+  day.setHours(0, 0, 0, 0);
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  if (day < today) {
+    throw new AppError("Cannot assign duty — schedule has already passed", 400);
+  }
+  if (day.getTime() === today.getTime()) {
+    const [eh, em] = (schedule.endTime || "").split(":").map(Number);
+    if (Number.isFinite(eh) && Number.isFinite(em)) {
+      const endMin = eh * 60 + em;
+      const nowMin = now.getHours() * 60 + now.getMinutes();
+      if (nowMin >= endMin) {
+        throw new AppError("Cannot assign duty — schedule has already ended", 400);
+      }
+    }
+  }
+
   const group = await examGroupRepo.findById(schedule.examGroup);
   if (group) {
-    const now = new Date();
     if (new Date(group.endDate) < now) {
       throw new AppError("Cannot assign duty — exam group is already completed", 400);
     }

@@ -7,6 +7,7 @@ const Department = require("../department/department.model");
 const Semester = require("../department/semester.model");
 const AppError = require("../../shared/utils/AppError");
 const { withOptionalTransaction } = require("../../shared/utils/withOptionalTransaction");
+const dcsGroupService = require("../dcs/dcsGroup.service");
 
 /**
  * Same time-overlap math used elsewhere in the codebase.
@@ -341,6 +342,16 @@ const finalizeSEEPlan = async (data, userId) => {
       roomsCreated: roomGroups.size,
     };
   });
+
+  // DCS sizing runs post-commit so the read-back sees the just-written
+  // ExamRooms (see cie.service.js for the same pattern + rationale).
+  try {
+    await dcsGroupService.generateDCSGroupsForExamGroup(plan._id);
+  } catch (err) {
+    console.error("DCS group generation failed for", plan._id, err);
+  }
+
+  return plan;
 };
 
 module.exports = { createSEEPlan, finalizeSEEPlan };

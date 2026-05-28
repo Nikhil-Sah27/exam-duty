@@ -18,6 +18,7 @@ import ManageDutiesPage from "@/modules/manage-duties/components/ManageDutiesPag
 import TeacherDetailsPage from "@/modules/manage-duties/components/TeacherDetailsPage";
 import { invigilatorRoutes } from "@/modules/invigilator/routes/invigilatorRoutes";
 import { rsRoutes } from "@/modules/rs/routes/rsRoutes";
+import { dcsRoutes } from "@/modules/dcs/routes/dcsRoutes";
 
 export default function App() {
   return (
@@ -42,6 +43,7 @@ export default function App() {
       </Route>
       {invigilatorRoutes}
       {rsRoutes}
+      {dcsRoutes}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

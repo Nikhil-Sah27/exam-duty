@@ -107,7 +107,15 @@
       "Bash(netsh int *)",
       "Bash(Get-ChildItem -Path \"D:\\\\exam-duty\\\\backend\\\\modules\" -Directory)",
       "Bash(Select-Object Name)",
-      "Bash(Get-ChildItem -Path \"D:\\\\exam-duty\\\\frontend\\\\src\\\\shared\\\\components\" -File)"
+      "Bash(Get-ChildItem -Path \"D:\\\\exam-duty\\\\frontend\\\\src\\\\shared\\\\components\" -File)",
+      "Bash(powershell *)",
+      "Bash(echo \"EXIT_CODE=$?\")",
+      "Bash(python -c \"import json,sys; r=json.load\\(sys.stdin\\); print\\('count:', r.get\\('count'\\)\\); [print\\('-', g.get\\('examType'\\), 'Sem', g.get\\('semester'\\), '|', g.get\\('_id'\\)\\) for g in r.get\\('data', []\\)]\")",
+      "Bash(python -c \"import json,sys; r=json.load\\(sys.stdin\\); print\\('count:', r['count']\\)\")",
+      "Bash(python -c \"import json,sys; print\\(json.load\\(sys.stdin\\)\\)\")",
+      "Bash(python -c \"import json,sys; print\\('   ', json.load\\(sys.stdin\\)['count']\\)\")",
+      "Bash(PYTHONIOENCODING=utf-8 python -c ' *)",
+      "Bash(python -c \"import json,sys; r=json.load\\(sys.stdin\\); print\\('  ', 'cancelled' if r.get\\('success'\\) else 'FAIL:', r.get\\('message',''\\)\\)\")"
     ]
   }
 }

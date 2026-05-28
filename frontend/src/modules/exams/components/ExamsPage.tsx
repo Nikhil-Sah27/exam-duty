@@ -19,13 +19,6 @@ export default function ExamsPage() {
 
   const allGroups = groups || [];
 
-  // Apply client-side filters
-  const filtered = allGroups.filter((g) => {
-    if (filterType && g.examType !== filterType) return false;
-    if (filterSemester && g.semester !== Number(filterSemester)) return false;
-    return true;
-  });
-
   const handleDelete = () => {
     if (!deleteTarget) return;
     deleteMutation.mutate(deleteTarget._id, {
@@ -68,8 +61,9 @@ export default function ExamsPage() {
         <p className="text-gray-500">Loading exam groups...</p>
       ) : (
         <ExamGrid
-          groups={filtered}
+          groups={allGroups}
           selectedType={filterType}
+          selectedSemester={filterSemester}
           onAddClick={() => setModalOpen(true)}
           onDelete={(group) => setDeleteTarget(group)}
         />

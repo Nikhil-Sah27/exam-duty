@@ -10,6 +10,7 @@ const CIEPlanEntry = require("./ciePlan.model");
 const AppError = require("../../shared/utils/AppError");
 const { generateExamDates } = require("./cie.utils");
 const { withOptionalTransaction } = require("../../shared/utils/withOptionalTransaction");
+const dcsGroupService = require("../dcs/dcsGroup.service");
 
 /**
  * Fetch departments with their semester + courses for a given semester name.
@@ -500,6 +501,21 @@ const finalizeCIEPlan = async (data, userId) => {
       roomsCreated: roomGroups.size,
     };
   });
+
+  // Generate DCS groups AFTER the create-transaction commits so the read-back
+  // sees the just-written ExamRooms. Per spec the formula uses students
+  // resolved at creation time (Semester.studentCount), so this still locks
+  // the requirement at "exam created" and not at "first DCS opens the page".
+  try {
+    await dcsGroupService.generateDCSGroupsForExamGroup(plan._id);
+  } catch (err) {
+    // The exam itself is valid even if DCS generation hiccups — surface the
+    // failure but don't roll back the committed exam. Re-generation can be
+    // retried manually if needed.
+    console.error("DCS group generation failed for", plan._id, err);
+  }
+
+  return plan;
 };
 
 module.exports = {

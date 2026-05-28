@@ -25,12 +25,23 @@ export function getStatusStyle(status: ExamGroupStatus) {
 const TYPE_COLORS: Record<string, string> = {
   IA1: "bg-violet-600",
   IA2: "bg-indigo-600",
-  IA3: "bg-blue-600",
-  SEE: "bg-rose-600",
+  IA3: "bg-cyan-600",
+  SEE: "bg-gradient-to-br from-pink-500 to-purple-600",
 };
 
 export function getTypeColor(examType: string): string {
   return TYPE_COLORS[examType] || "bg-gray-800";
+}
+
+const TYPE_SUBTITLE: Record<string, string> = {
+  IA1: "Internal Assessment 1",
+  IA2: "Internal Assessment 2",
+  IA3: "Internal Assessment 3",
+  SEE: "Semester End Examination",
+};
+
+export function getTypeSubtitle(examType: string): string {
+  return TYPE_SUBTITLE[examType] || examType;
 }
 
 /** True when one of `duties` matches the given schedule+room slot. */

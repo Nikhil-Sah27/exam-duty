@@ -9,12 +9,11 @@ import {
 import type { RoomDutyFlags } from "@/modules/shared/exams/types/exam.types";
 
 /**
- * Operational dashboard roles (Invigilator, RS, future DCS) share the same
- * page set and only differ in which "role slot" they own on a given exam
- * room. The Controller (cs/dcs admin) is a completely separate flow and is
- * not covered by this config.
+ * Operational dashboard roles (Invigilator, RS, DCS) share the same page set
+ * and only differ in which "role slot" they own on a given exam room. The
+ * Controller (cs) is a separate flow and is not covered by this config.
  */
-export type OperationalRole = "invigilator" | "rs";
+export type OperationalRole = "invigilator" | "rs" | "dcs";
 
 export interface RoleNavItem {
   path: string;
@@ -72,9 +71,20 @@ export const RS_CONFIG: RoleDashboardConfig = {
   navItems: buildNav("/rs"),
 };
 
+export const DCS_CONFIG: RoleDashboardConfig = {
+  roleKey: "dcs",
+  roleLabel: "DCS",
+  sectionLabel: "Deputy Chief Superintendent",
+  basePath: "/dcs",
+  defaultPath: "/dcs/dashboard",
+  flagKey: "dcsAssigned",
+  navItems: buildNav("/dcs"),
+};
+
 const CONFIGS: Record<OperationalRole, RoleDashboardConfig> = {
   invigilator: INVIGILATOR_CONFIG,
   rs: RS_CONFIG,
+  dcs: DCS_CONFIG,
 };
 
 export function getRoleConfig(role: string | undefined): RoleDashboardConfig | null {
@@ -83,5 +93,5 @@ export function getRoleConfig(role: string | undefined): RoleDashboardConfig | n
 }
 
 export function isOperationalRole(role: string | undefined): role is OperationalRole {
-  return role === "invigilator" || role === "rs";
+  return role === "invigilator" || role === "rs" || role === "dcs";
 }

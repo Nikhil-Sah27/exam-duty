@@ -1,4 +1,5 @@
 import { Calendar, Clock, DoorOpen, CheckCircle2, Lock } from "lucide-react";
+import { getTypeColor } from "@/modules/shared/exams/utils/examStatusUtils";
 import type { DutySlot, SlotState } from "../types";
 
 const STATE_STYLES: Record<SlotState, { border: string; bg: string; label: string; labelColor: string }> = {
@@ -69,7 +70,9 @@ export default function DutySlotCard({ slot, state, onToggle }: DutySlotCardProp
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
-          <span className="rounded bg-gray-800 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white">
+          <span
+            className={`rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white ${getTypeColor(slot.examType)}`}
+          >
             {slot.examType}
           </span>
           <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-700">
