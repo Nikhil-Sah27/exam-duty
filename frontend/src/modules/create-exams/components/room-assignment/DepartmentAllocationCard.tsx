@@ -6,6 +6,7 @@ import type {
   BuildingGrouped,
   RoomInfo,
   SeatSharingPlanItem,
+  ReservationInfo,
 } from "../../types";
 import { getUnusedSeatsInSlot } from "../../services/seatSharing";
 import { getDeptDisplayStats } from "../../selectors/allocationSelectors";
@@ -21,6 +22,7 @@ interface DepartmentAllocationCardProps {
   buildings: BuildingGrouped[];
   avgStudentsPerClass: number;
   disabledRoomIds: Set<string>;
+  reservedRoomInfo?: Map<string, ReservationInfo>;
   defaultExpanded?: boolean;
   onAddRoom: (room: RoomInfo) => void;
   onRemoveRoom: (roomId: string) => void;
@@ -34,6 +36,7 @@ export default function DepartmentAllocationCard({
   buildings,
   avgStudentsPerClass,
   disabledRoomIds,
+  reservedRoomInfo,
   defaultExpanded = false,
   onAddRoom,
   onRemoveRoom,
@@ -293,6 +296,7 @@ export default function DepartmentAllocationCard({
                 buildings={buildings}
                 assignedRoomIds={assignedRoomIds}
                 disabledRoomIds={disabledRoomIds}
+                reservedRoomInfo={reservedRoomInfo}
                 capacityMet={capacityMet}
                 onToggle={(room) => {
                   if (assignedRoomIds.includes(room._id)) {

@@ -10,7 +10,11 @@ import {
   Sparkles,
 } from "lucide-react";
 import DcsRoomChips from "./DcsRoomChips";
+import type { ConflictAnalysis } from "@/modules/duties/services/dutyConflictService";
 import type { DcsGroup, DcsGroupState } from "../types";
+
+const CONFLICT_TOOLTIP =
+  "You already have a duty assigned or selected during this time slot. Please remove the conflicting selection first.";
 
 /**
  * Spec card colors — vibrant gradients, not flat backgrounds. Available =
@@ -45,17 +49,19 @@ const STATE_STYLES: Record<
     disabled: false,
     glow: "shadow-blue-100",
   },
+  // Occupied + Conflict both paint red per the teacher-perspective palette
+  // (green/blue/red — no amber on teacher dashboards).
   OCCUPIED: {
-    border: "border-gray-200",
-    bg: "bg-gray-100/70 opacity-70 cursor-not-allowed",
+    border: "border-red-300",
+    bg: "bg-gradient-to-br from-red-50 via-white to-rose-50 opacity-80 cursor-not-allowed",
     label: "Occupied",
-    labelColor: "text-gray-500",
+    labelColor: "text-red-700",
     disabled: true,
   },
   MINE: {
     border: "border-blue-400",
     bg: "bg-gradient-to-br from-blue-100 via-sky-50 to-indigo-100 cursor-default",
-    label: "Yours",
+    label: "My Duty",
     labelColor: "text-blue-700",
     disabled: true,
     glow: "shadow-blue-100",
@@ -63,8 +69,8 @@ const STATE_STYLES: Record<
   CONFLICT: {
     border: "border-red-300",
     bg: "bg-gradient-to-br from-red-50 to-rose-50 opacity-80 cursor-not-allowed",
-    label: "Conflict",
-    labelColor: "text-red-600",
+    label: "Time Conflict",
+    labelColor: "text-red-700",
     disabled: true,
   },
 };
@@ -102,16 +108,35 @@ interface DcsGroupCardProps {
   group: DcsGroup;
   state: DcsGroupState;
   onToggle: () => void;
+  /** Conflict analysis when state === CONFLICT — drives tooltip text. */
+  conflict?: ConflictAnalysis;
+  /**
+   * Cross-schedule display number — falls back to the backend per-schedule
+   * `groupIndex` if no ordinal was supplied. Surfaces "DCS · Group #N"
+   * where N is unique across every group the user can see, so the page
+   * isn't full of identical "Group 1" badges.
+   */
+  displayOrdinal?: number;
 }
 
-export default function DcsGroupCard({ group, state, onToggle }: DcsGroupCardProps) {
+export default function DcsGroupCard({
+  group,
+  state,
+  onToggle,
+  conflict,
+  displayOrdinal,
+}: DcsGroupCardProps) {
   const styles = STATE_STYLES[state];
+  const tooltip =
+    state === "CONFLICT" ? conflict?.reason || CONFLICT_TOOLTIP : undefined;
 
   return (
     <button
       onClick={styles.disabled ? undefined : onToggle}
       disabled={styles.disabled}
-      className={`group/card relative flex flex-col gap-3 overflow-hidden rounded-2xl border-2 p-4 text-left shadow-sm transition-all hover:shadow-md ${styles.border} ${styles.bg} ${styles.glow || ""}`}
+      aria-disabled={styles.disabled}
+      title={tooltip}
+      className={`group/card relative flex flex-col gap-3 overflow-hidden rounded-2xl border-2 p-4 text-left shadow-sm transition-all hover:shadow-md disabled:cursor-not-allowed ${styles.border} ${styles.bg} ${styles.glow || ""}`}
     >
       <header className="flex items-start justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1.5">
@@ -123,7 +148,7 @@ export default function DcsGroupCard({ group, state, onToggle }: DcsGroupCardPro
           </span>
           <span className="inline-flex items-center gap-1 rounded-full bg-indigo-600/90 px-2 py-0.5 text-[10px] font-bold text-white">
             <Crown className="h-2.5 w-2.5" />
-            DCS · Group {group.groupIndex}/{group.dcsRequired}
+            DCS · Group #{displayOrdinal ?? group.groupIndex}
           </span>
         </div>
         <span
@@ -181,12 +206,44 @@ export default function DcsGroupCard({ group, state, onToggle }: DcsGroupCardPro
       )}
 
       {state === "OCCUPIED" && group.assignedTeacher && (
-        <p className="border-t border-gray-200 pt-2 text-[10px] text-gray-500">
-          Claimed by{" "}
-          <span className="font-semibold text-gray-700">
-            {group.assignedTeacher.name}
+        <div
+          className="flex items-start gap-1.5 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-800"
+          title={[
+            group.assignedTeacher.name,
+            "Deputy Chief Superintendent",
+            group.assignedTeacher.department || "—",
+            group.assignedTeacher.phone || group.assignedTeacher.email || "",
+          ]
+            .filter(Boolean)
+            .join("\n")}
+        >
+          <Lock className="mt-0.5 h-3 w-3 shrink-0" />
+          <span>
+            <span className="font-semibold uppercase tracking-wider">
+              Assigned to
+            </span>
+            <span className="ml-1 font-semibold">{group.assignedTeacher.name}</span>
+            {group.assignedTeacher.department && (
+              <span className="ml-1 text-red-700/80">
+                · {group.assignedTeacher.department}
+              </span>
+            )}
           </span>
-        </p>
+        </div>
+      )}
+
+      {state === "CONFLICT" && (
+        <div className="flex items-start gap-1.5 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+          <span>
+            <span className="font-semibold uppercase tracking-wider">
+              Time Conflict
+            </span>
+            <span className="ml-1">
+              — You already have a duty during this date and time.
+            </span>
+          </span>
+        </div>
       )}
 
       <footer className="mt-auto flex items-center justify-between border-t border-white/60 pt-2">

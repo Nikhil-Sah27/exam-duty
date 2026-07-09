@@ -46,7 +46,15 @@ export default function RSDutyGroupTable({
             const isConflict = state === "CONFLICT";
             const disabled = isFull || isConflict;
             return (
-              <tr key={g.groupId} className="border-b border-gray-50 last:border-b-0">
+              <tr
+                key={g.groupId}
+                className={`border-b border-gray-50 last:border-b-0 ${isConflict || isFull ? "opacity-60" : ""}`}
+                title={
+                  isConflict
+                    ? "You already have a duty assigned or selected during this time slot. Please remove the conflicting selection first."
+                    : undefined
+                }
+              >
                 <td className="px-4 py-2.5">
                   <div className="flex items-center gap-1.5">
                     <span className="rounded bg-gray-800 px-1.5 py-0.5 text-[10px] font-bold text-white">
@@ -78,8 +86,11 @@ export default function RSDutyGroupTable({
                       <Lock className="h-3 w-3" /> Full
                     </span>
                   ) : isConflict ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
-                      <AlertTriangle className="h-3 w-3" /> Conflict
+                    <span
+                      className="inline-flex cursor-not-allowed items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700"
+                      title="You already have a duty assigned or selected during this time slot. Please remove the conflicting selection first."
+                    >
+                      <AlertTriangle className="h-3 w-3" /> Time Conflict
                     </span>
                   ) : (
                     <button

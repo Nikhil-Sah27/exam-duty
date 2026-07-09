@@ -8,7 +8,7 @@ import {
 } from "@/modules/shared/exams/hooks/useSharedExamData";
 import { getExamGroupStatus } from "@/modules/shared/exams/utils/examStatusUtils";
 import ExamHeader from "@/modules/exams/components/ExamHeader";
-import StatusLegend from "@/modules/exams/components/StatusLegend";
+import DutyStatusLegend from "@/modules/shared/components/DutyStatusLegend";
 import InvigilatorTimetable from "../components/InvigilatorTimetable";
 
 export default function InvigilatorExamDetailsPage() {
@@ -38,7 +38,7 @@ export default function InvigilatorExamDetailsPage() {
 
       <ExamHeader group={group} status={status} />
 
-      <StatusLegend />
+      <DutyStatusLegend />
 
       <InvigilatorTimetable
         schedules={group.schedules || []}

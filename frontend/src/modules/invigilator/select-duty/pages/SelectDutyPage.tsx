@@ -5,6 +5,7 @@ import DutyFilterBar from "../components/DutyFilterBar";
 import DutySlotCard from "../components/DutySlotCard";
 import DutySelectionTable from "../components/DutySelectionTable";
 import SelectedDutySummary from "../components/SelectedDutySummary";
+import DutyStatusLegend from "@/modules/shared/components/DutyStatusLegend";
 import { EMPTY_FILTERS } from "../types";
 
 type ViewMode = "grid" | "table";
@@ -16,6 +17,8 @@ export default function SelectDutyPage() {
     selected,
     filters,
     feedback,
+    conflictFor,
+    conflictSummary,
     isLoading,
     error,
     stateOf,
@@ -55,6 +58,8 @@ export default function SelectDutyPage() {
         </div>
       </div>
 
+      <DutyStatusLegend />
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           <DutyFilterBar
@@ -89,7 +94,13 @@ export default function SelectDutyPage() {
             </div>
           </div>
 
-          {feedback && (
+          {conflictSummary.banner && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              {conflictSummary.banner}
+            </div>
+          )}
+
+          {feedback && !conflictSummary.banner && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
               {feedback}
             </div>
@@ -111,6 +122,7 @@ export default function SelectDutyPage() {
                   slot={slot}
                   state={stateOf(slot)}
                   onToggle={() => tryToggleSlot(slot)}
+                  conflict={conflictFor(slot)}
                 />
               ))}
               {filteredSlots.length === 0 && (

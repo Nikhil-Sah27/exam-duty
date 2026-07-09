@@ -6,6 +6,8 @@ const User = require("../auth/auth.model");
 const examGroupRepo = require("../exam/examGroup.repository");
 const examScheduleRepo = require("../exam/examSchedule.repository");
 const examRoomRepo = require("../exam/examRoom.repository");
+const dcsGroupRepository = require("../dcs/dcsGroup.repository");
+const dutyRepository = require("../duty/duty.repository");
 const { emit, emitToMany } = require("../notification/notification.emitter");
 
 // ---------- Helpers ----------
@@ -98,12 +100,119 @@ const validateMoveTarget = async ({ requestedSchedule, requestedExamRoom, userId
   return { schedule, examRoom };
 };
 
+// ---------- DCS group swap submit ----------
+
+/**
+ * DCS swap path. Reuses the same /change-requests endpoint as duty-scoped
+ * requests but operates on whole DCSGroups, not individual rooms. The
+ * teacher submits {sourceGroupId, targetGroupId, reason}; the body's
+ * type === "dcs_swap" routes us here.
+ *
+ * Validation mirrors the DCS claim flow (date in future, no time conflict
+ * with the requester's other duties) so an approval can succeed later.
+ */
+const submitDcsGroupSwap = async (
+  { dcsSourceGroup, dcsTargetGroup, reason },
+  userId
+) => {
+  if (!dcsSourceGroup || !dcsTargetGroup) {
+    throw new AppError("Source and target DCS groups are required", 400);
+  }
+  if (String(dcsSourceGroup) === String(dcsTargetGroup)) {
+    throw new AppError("Source and target groups must differ", 400);
+  }
+
+  const [source, target] = await Promise.all([
+    dcsGroupRepository.findById(dcsSourceGroup),
+    dcsGroupRepository.findById(dcsTargetGroup),
+  ]);
+  if (!source) throw new AppError("Source DCS group not found", 404);
+  if (!target) throw new AppError("Target DCS group not found", 404);
+
+  // Only the DCS who currently owns the source group can request to move off it.
+  if (
+    !source.assignedTeacher ||
+    String(source.assignedTeacher._id || source.assignedTeacher) !== String(userId)
+  ) {
+    throw new AppError("You don't own the source DCS group", 403);
+  }
+  if (source.status !== "claimed") {
+    throw new AppError("Source DCS group is not claimed", 400);
+  }
+
+  // Target must be free.
+  if (target.status !== "open" || target.assignedTeacher) {
+    throw new AppError("Target DCS group is already taken", 409);
+  }
+
+  // Target date/time validations — same gates as claimGroup.
+  const now = new Date();
+  const day = new Date(target.schedule.date);
+  day.setHours(0, 0, 0, 0);
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  if (day < today) {
+    throw new AppError("Target schedule has already passed", 400);
+  }
+
+  // Reject if the requester has any *other* duty (outside the source group)
+  // that conflicts with the target's time window — they couldn't actually
+  // serve the target if approved.
+  const sourceDutyIds = (source.duties || []).map(String);
+  const otherDuties = await Duty.find({
+    teacher: userId,
+    status: "assigned",
+    _id: { $nin: sourceDutyIds },
+  });
+  for (const d of otherDuties) {
+    if (!sameDay(d.date, target.schedule.date)) continue;
+    if (overlaps(d.startTime, d.endTime, target.schedule.startTime, target.schedule.endTime)) {
+      throw new AppError(
+        `Time conflict with your duty at ${d.room} (${d.startTime}–${d.endTime}) on the target date`,
+        409
+      );
+    }
+  }
+
+  const existing = await changeRequestRepository.findPendingDcsByUserAndSource(
+    dcsSourceGroup,
+    userId
+  );
+  if (existing) {
+    throw new AppError("You already have a pending swap for this DCS group", 409);
+  }
+
+  const request = await changeRequestRepository.create({
+    scope: "dcs_group",
+    type: "dcs_swap",
+    requestedBy: userId,
+    reason,
+    dcsSourceGroup,
+    dcsTargetGroup,
+  });
+
+  const adminIds = await getAdminIds();
+  emitToMany("request_submitted", {
+    recipients: adminIds,
+    refModel: "ChangeRequest",
+    refId: request._id,
+    data: { type: "DCS swap", date: target.schedule.date },
+  });
+
+  return request;
+};
+
 // ---------- Submit ----------
 
 const submitRequest = async (
-  { duty: dutyId, type, reason, swapWith, requestedSchedule, requestedExamRoom },
+  { duty: dutyId, type, reason, swapWith, requestedSchedule, requestedExamRoom, dcsSourceGroup, dcsTargetGroup },
   userId
 ) => {
+  // DCS group swap fork — uses different identifiers, so route early.
+  if (type === "dcs_swap") {
+    return submitDcsGroupSwap({ dcsSourceGroup, dcsTargetGroup, reason }, userId);
+  }
+
   const duty = await Duty.findById(dutyId);
   if (!duty) throw new AppError("Duty not found", 404);
   if (duty.status !== "assigned") {
@@ -212,6 +321,109 @@ const getMyRequests = async (userId) => {
   return changeRequestRepository.findAll({ requestedBy: userId });
 };
 
+// ---------- DCS group swap approve ----------
+
+/**
+ * Approve a DCS group swap by atomically releasing the requester from the
+ * source group and claiming the target group on their behalf. Mirrors the
+ * release + claim flows in dcsGroup.service so duties, group status, and
+ * downstream queries all stay consistent — no separate "swap" code path.
+ */
+const approveDcsGroupSwap = async (request, reviewerId, reviewNote) => {
+  // Refresh both groups so we have the latest state before mutating.
+  const [source, target] = await Promise.all([
+    dcsGroupRepository.findById(request.dcsSourceGroup._id),
+    dcsGroupRepository.findById(request.dcsTargetGroup._id),
+  ]);
+  if (!source) throw new AppError("Source DCS group no longer exists", 404);
+  if (!target) throw new AppError("Target DCS group no longer exists", 404);
+
+  // Auto-reject if the target was claimed by someone else in the meantime.
+  if (target.status !== "open" || target.assignedTeacher) {
+    return changeRequestRepository.updateById(request._id, {
+      status: "rejected",
+      reviewedBy: reviewerId,
+      reviewedAt: new Date(),
+      reviewNote: "Target DCS group is no longer available.",
+    });
+  }
+
+  const requesterId = request.requestedBy._id || request.requestedBy;
+
+  // Sanity: source must still belong to the requester. If admin had already
+  // released the user by other means, fail rather than silently dropping the
+  // approval.
+  if (
+    !source.assignedTeacher ||
+    String(source.assignedTeacher._id || source.assignedTeacher) !== String(requesterId)
+  ) {
+    throw new AppError("Source group is no longer owned by the requester", 409);
+  }
+
+  const updated = await withOptionalTransaction(async (session) => {
+    const sessionOpt = session ? { session } : undefined;
+
+    // ── 1. Release the source group (mirror dcsGroup.releaseGroup) ─────────
+    await Duty.updateMany(
+      { _id: { $in: source.duties || [] } },
+      {
+        status: "cancelled",
+        cancelledAt: new Date(),
+        cancelReason: "Approved DCS swap",
+      },
+      sessionOpt
+    );
+    await dcsGroupRepository.updateById(
+      source._id,
+      { assignedTeacher: null, status: "open", duties: [] },
+      session
+    );
+
+    // ── 2. Claim the target group (mirror dcsGroup.claimGroup) ─────────────
+    const newDutyIds = [];
+    for (const examRoom of target.assignedRooms) {
+      const roomNumber = examRoom?.room?.roomNumber || "";
+      const duty = await dutyRepository.create(
+        {
+          exam: null,
+          examSchedule: target.schedule._id,
+          examRoom: examRoom._id,
+          teacher: requesterId,
+          room: roomNumber,
+          date: target.schedule.date,
+          startTime: target.schedule.startTime,
+          endTime: target.schedule.endTime,
+          assignedBy: reviewerId,
+          isSelfAssigned: false,
+        },
+        session
+      );
+      newDutyIds.push(duty._id);
+    }
+    await dcsGroupRepository.updateById(
+      target._id,
+      { assignedTeacher: requesterId, status: "claimed", duties: newDutyIds },
+      session
+    );
+
+    return changeRequestRepository.updateById(request._id, {
+      status: "approved",
+      reviewedBy: reviewerId,
+      reviewedAt: new Date(),
+      reviewNote: reviewNote || null,
+    });
+  });
+
+  emit("request_approved", {
+    recipient: requesterId,
+    refModel: "ChangeRequest",
+    refId: request._id,
+    data: { type: "DCS swap", reviewNote },
+  });
+
+  return updated;
+};
+
 // ---------- Approve ----------
 
 const approveRequest = async (id, reviewerId, reviewNote) => {
@@ -219,6 +431,12 @@ const approveRequest = async (id, reviewerId, reviewNote) => {
   if (!request) throw new AppError("Change request not found", 404);
   if (request.status !== "pending") {
     throw new AppError(`Request is already ${request.status}`, 400);
+  }
+
+  // DCS group swap branches out early — it moves a whole bundle of duties,
+  // not a single duty, so the per-duty paths below don't apply.
+  if (request.scope === "dcs_group") {
+    return approveDcsGroupSwap(request, reviewerId, reviewNote);
   }
 
   // Move requests need a vacancy re-check BEFORE we start mutating. If the

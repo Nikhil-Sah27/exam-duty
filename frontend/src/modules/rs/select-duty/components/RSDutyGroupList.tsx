@@ -1,10 +1,12 @@
 import RSDutyGroupCard from "./RSDutyGroupCard";
+import type { ConflictAnalysis } from "@/modules/duties/services/dutyConflictService";
 import type { RSDutyGroup, RSGroupState } from "../types";
 
 interface RSDutyGroupListProps {
   groups: RSDutyGroup[];
   stateOf: (group: RSDutyGroup) => RSGroupState;
   onToggle: (group: RSDutyGroup) => void;
+  conflictFor?: (group: RSDutyGroup) => ConflictAnalysis;
 }
 
 /**
@@ -15,6 +17,7 @@ export default function RSDutyGroupList({
   groups,
   stateOf,
   onToggle,
+  conflictFor,
 }: RSDutyGroupListProps) {
   if (groups.length === 0) {
     return (
@@ -36,6 +39,7 @@ export default function RSDutyGroupList({
           group={g}
           state={stateOf(g)}
           onToggle={() => onToggle(g)}
+          conflict={conflictFor?.(g)}
         />
       ))}
     </div>

@@ -6,7 +6,7 @@
  */
 export type { AvailableDutySlot as DutySlot } from "@/modules/shared/exams/selectors/examSelectors";
 
-export type SlotState = "AVAILABLE" | "FULL" | "SELECTED";
+export type SlotState = "AVAILABLE" | "FULL" | "SELECTED" | "CONFLICT";
 
 export interface DutyFilters {
   date: string;

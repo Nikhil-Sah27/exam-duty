@@ -86,9 +86,19 @@ export default function SEEExamSetupPage() {
       roomAssignment.finalizeError instanceof Error
         ? roomAssignment.finalizeError.message
         : null;
+    // SEE has no shared shift concept — every routine entry carries its own
+    // window. Fabricate a shifts array indexed by slot ordinality so the
+    // shared `RoomAssignStep` (which looks up `shifts[shiftIndex]`) resolves
+    // to the correct time window per slot.
+    const seeShifts = routineHook.routine.map((entry) => ({
+      name: `${entry.startTime} – ${entry.endTime}`,
+      startTime: entry.startTime,
+      endTime: entry.endTime,
+    }));
     return (
       <RoomAssignStep
         slotAllocations={roomAssignment.slotAllocations}
+        shifts={seeShifts}
         usedRoomsMap={roomAssignment.usedRoomsMap}
         avgStudentsPerClass={60}
         warnings={roomAssignment.roomWarnings}

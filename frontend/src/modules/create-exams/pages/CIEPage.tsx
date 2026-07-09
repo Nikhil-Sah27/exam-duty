@@ -215,6 +215,7 @@ export default function CIEPage() {
       {exam.step === 3 && (
         <RoomAssignStep
           slotAllocations={exam.slotAllocations}
+          shifts={exam.config.shifts}
           usedRoomsMap={exam.usedRoomsMap}
           avgStudentsPerClass={exam.config.avgStudentsPerClass}
           warnings={exam.roomWarnings}

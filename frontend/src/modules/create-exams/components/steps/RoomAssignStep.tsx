@@ -11,14 +11,17 @@ import {
 } from "lucide-react";
 import Button from "@/shared/components/Button";
 import { useCIERooms } from "../../hooks";
-import type { SlotAllocation, UsedRoomsMap, RoomInfo, SeatSharingPlanItem } from "../../types";
+import { useSlotReservations } from "../../hooks/useSlotReservations";
+import type { SlotAllocation, UsedRoomsMap, RoomInfo, SeatSharingPlanItem, ReservationInfo, Shift } from "../../types";
 import { getSlotKey } from "../../services/roomAllocation";
+import { reservationSlotKey } from "../../utils/roomReservationUtils";
 import { getGlobalAllocationStats } from "../../selectors/allocationSelectors";
 import { getDisabledRoomsBySlot } from "../../selectors/roomAssignSelectors";
 import SlotCard from "../room-assignment/SlotCard";
 
 interface RoomAssignStepProps {
   slotAllocations: SlotAllocation[];
+  shifts: Shift[];
   usedRoomsMap: UsedRoomsMap;
   avgStudentsPerClass: number;
   warnings: string[];
@@ -35,6 +38,7 @@ interface RoomAssignStepProps {
 
 export default function RoomAssignStep({
   slotAllocations,
+  shifts,
   usedRoomsMap,
   avgStudentsPerClass,
   warnings,
@@ -49,10 +53,68 @@ export default function RoomAssignStep({
 }: RoomAssignStepProps) {
   const { data: buildings = [], isLoading } = useCIERooms();
 
-  const disabledBySlot = useMemo(
-    () => getDisabledRoomsBySlot(slotAllocations, usedRoomsMap),
-    [slotAllocations, usedRoomsMap]
+  // Slot windows expressed in absolute (date, startTime, endTime) so the
+  // global-reservation lookup can join against ExamSchedule on the server.
+  const slotWindows = useMemo(
+    () =>
+      slotAllocations
+        .map((slot) => {
+          const shift = shifts[slot.shiftIndex];
+          if (!shift) return null;
+          return {
+            date: slot.date,
+            startTime: shift.startTime,
+            endTime: shift.endTime,
+          };
+        })
+        .filter((w): w is { date: string; startTime: string; endTime: string } => w !== null),
+    [slotAllocations, shifts],
   );
+
+  const { reservedBySlot } = useSlotReservations(slotWindows);
+
+  // Union local (usedRoomsMap) with global reservations so the picker can
+  // disable *any* room already booked, regardless of which exam booked it.
+  // Local roomId-string keys use the existing `getSlotKey`; global reservations
+  // use a `date|startTime|endTime` key. We build a merged set per local key.
+  const disabledBySlot = useMemo(() => {
+    const map = getDisabledRoomsBySlot(slotAllocations, usedRoomsMap);
+    for (const slot of slotAllocations) {
+      const shift = shifts[slot.shiftIndex];
+      if (!shift) continue;
+      const localKey = getSlotKey(slot.date, slot.shiftIndex);
+      const globalKey = reservationSlotKey(
+        slot.date,
+        shift.startTime,
+        shift.endTime,
+      );
+      const reserved = reservedBySlot.get(globalKey);
+      if (!reserved || reserved.size === 0) continue;
+      const merged = new Set(map.get(localKey) || []);
+      for (const roomId of reserved.keys()) merged.add(roomId);
+      map.set(localKey, merged);
+    }
+    return map;
+  }, [slotAllocations, usedRoomsMap, shifts, reservedBySlot]);
+
+  // ReservationInfo lookup keyed by the *local* slotKey so SlotCard doesn't
+  // need to know about the server's slotKey format.
+  const reservedInfoBySlot = useMemo(() => {
+    const map = new Map<string, Map<string, ReservationInfo>>();
+    for (const slot of slotAllocations) {
+      const shift = shifts[slot.shiftIndex];
+      if (!shift) continue;
+      const localKey = getSlotKey(slot.date, slot.shiftIndex);
+      const globalKey = reservationSlotKey(
+        slot.date,
+        shift.startTime,
+        shift.endTime,
+      );
+      const reserved = reservedBySlot.get(globalKey);
+      if (reserved && reserved.size > 0) map.set(localKey, reserved);
+    }
+    return map;
+  }, [slotAllocations, shifts, reservedBySlot]);
 
   // All business-logic derived from utils — component only handles presentation
   const globalStats = useMemo(
@@ -186,6 +248,7 @@ export default function RoomAssignStep({
             buildings={buildings}
             avgStudentsPerClass={avgStudentsPerClass}
             disabledRoomIds={disabledBySlot.get(slotKey) || new Set()}
+            reservedRoomInfo={reservedInfoBySlot.get(slotKey)}
             defaultExpanded={index === 0}
             onAddRoom={(deptId, room) => onAddRoom(slotKey, deptId, room)}
             onRemoveRoom={(deptId, roomId) => onRemoveRoom(slotKey, deptId, roomId)}

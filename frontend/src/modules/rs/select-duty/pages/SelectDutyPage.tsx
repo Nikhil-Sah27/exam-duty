@@ -5,6 +5,7 @@ import { useRSDutySelection } from "../hooks/useRSDutySelection";
 import RSDutyGroupList from "../components/RSDutyGroupList";
 import RSDutyGroupTable from "../components/RSDutyGroupTable";
 import RSDutySelectionPanel from "../components/RSDutySelectionPanel";
+import DutyStatusLegend from "@/modules/shared/components/DutyStatusLegend";
 import type { DutyFilters } from "@/modules/invigilator/select-duty/types";
 
 type ViewMode = "grid" | "table";
@@ -25,10 +26,12 @@ export default function SelectDutyPage() {
     selected,
     filters,
     feedback,
+    conflictSummary,
     availableDepartments,
     isLoading,
     error,
     stateOf,
+    conflictFor,
     tryToggleGroup,
     removeGroup,
     clearSelection,
@@ -52,6 +55,8 @@ export default function SelectDutyPage() {
           </p>
         </div>
       </div>
+
+      <DutyStatusLegend />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
@@ -91,7 +96,13 @@ export default function SelectDutyPage() {
             </div>
           </div>
 
-          {feedback && (
+          {conflictSummary.banner && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              {conflictSummary.banner}
+            </div>
+          )}
+
+          {feedback && !conflictSummary.banner && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
               {feedback}
             </div>
@@ -110,6 +121,7 @@ export default function SelectDutyPage() {
               groups={filteredGroups}
               stateOf={stateOf}
               onToggle={tryToggleGroup}
+              conflictFor={conflictFor}
             />
           ) : (
             <RSDutyGroupTable

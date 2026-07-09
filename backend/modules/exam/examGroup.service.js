@@ -177,14 +177,37 @@ const getDutyStatus = async (id) => {
         { room: roomId },
         { room: { $regex: new RegExp(`\\b${roomNumber}\\b`) } },
       ],
-    }).populate("teacher", "role");
+    }).populate("teacher", "name email phone role department designation");
 
-    const roles = new Set(duties.map((d) => d.teacher?.role).filter(Boolean));
+    // Populate per-role assignee info so the teacher-side modal can show the
+    // owner's name, department, contact, etc. CS callers only read the boolean
+    // flags below — the additional fields are additive and ignored there.
+    const dcsTeacher = duties.find((d) => d.teacher?.role === "dcs")?.teacher;
+    const rsTeacher = duties.find((d) => d.teacher?.role === "rs")?.teacher;
+    const invigilatorTeacher = duties.find(
+      (d) => d.teacher?.role === "invigilator",
+    )?.teacher;
+
+    const toPublic = (u) =>
+      u
+        ? {
+            _id: u._id,
+            name: u.name,
+            email: u.email,
+            phone: u.phone || null,
+            role: u.role,
+            department: u.department || null,
+            designation: u.designation || null,
+          }
+        : null;
 
     statusMap[examRoom._id] = {
-      dcsAssigned: roles.has("dcs"),
-      rsAssigned: roles.has("rs"),
-      invigilatorAssigned: roles.has("invigilator"),
+      dcsAssigned: Boolean(dcsTeacher),
+      rsAssigned: Boolean(rsTeacher),
+      invigilatorAssigned: Boolean(invigilatorTeacher),
+      dcsTeacher: toPublic(dcsTeacher),
+      rsTeacher: toPublic(rsTeacher),
+      invigilatorTeacher: toPublic(invigilatorTeacher),
     };
   }
 

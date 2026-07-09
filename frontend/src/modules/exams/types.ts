@@ -89,10 +89,32 @@ export interface ExamGroupDetails extends ExamGroup {
 
 // ── Duty Status types ──
 
+/**
+ * Public-facing assignee snapshot. Backend strips password + isActive and
+ * only exposes contact-relevant fields so teacher dashboards can show
+ * who currently owns each role on a room.
+ */
+export interface AssigneePublic {
+  _id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  role: "cs" | "dcs" | "rs" | "invigilator";
+  department: string | null;
+  designation: string | null;
+}
+
 export interface RoomDutyFlags {
   dcsAssigned: boolean;
   rsAssigned: boolean;
   invigilatorAssigned: boolean;
+  /**
+   * Populated assignee per role when the slot is filled. Additive — older
+   * callers that only read the booleans continue to work unchanged.
+   */
+  dcsTeacher?: AssigneePublic | null;
+  rsTeacher?: AssigneePublic | null;
+  invigilatorTeacher?: AssigneePublic | null;
 }
 
 /** Map of examRoomId → duty flags */

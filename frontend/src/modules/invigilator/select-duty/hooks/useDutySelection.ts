@@ -7,6 +7,8 @@ import {
 } from "@/modules/shared/exams/hooks/useSharedExamData";
 import { getRoleConfig } from "@/modules/shared/role-config/roleConfig";
 import { selectDuty } from "@/modules/invigilator/duties/services/invigilatorDutyService";
+import { useDutyConflicts } from "@/modules/duties/hooks/useDutyConflicts";
+import type { ConflictAnalysis } from "@/modules/duties/services/dutyConflictService";
 import type { DutyFilters, DutySlot, SlotState } from "../types";
 import { EMPTY_FILTERS } from "../types";
 import { validateSelection } from "../utils/dutyValidationUtils";
@@ -54,13 +56,49 @@ export function useDutySelection() {
     });
   }, [slots, filters]);
 
+  // Adapter: shared conflict hook expects {id, date, startTime, endTime}.
+  const selectedWindows = useMemo(
+    () =>
+      selected.map((s) => ({
+        id: s.slotId,
+        date: s.date,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        roomNumber: s.roomNumber,
+      })),
+    [selected],
+  );
+  const { isConflict, analyze, summarize } = useDutyConflicts({
+    selected: selectedWindows,
+    myDuties,
+  });
+
+  const slotWindow = useCallback(
+    (slot: DutySlot) => ({
+      id: slot.slotId,
+      date: slot.date,
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+      roomNumber: slot.roomNumber,
+    }),
+    [],
+  );
+
   const stateOf = useCallback(
     (slot: DutySlot): SlotState => {
       if (selected.some((s) => s.slotId === slot.slotId)) return "SELECTED";
       if (slot.flags[flagKey]) return "FULL";
+      // Pre-render conflict gate. Mirrors RS/DCS so the card paints disabled
+      // BEFORE the user clicks — no more "looks selectable, fails on click".
+      if (isConflict(slotWindow(slot))) return "CONFLICT";
       return "AVAILABLE";
     },
-    [selected, flagKey]
+    [selected, flagKey, isConflict, slotWindow],
+  );
+
+  const conflictFor = useCallback(
+    (slot: DutySlot): ConflictAnalysis => analyze(slotWindow(slot)),
+    [analyze, slotWindow],
   );
 
   const tryToggleSlot = useCallback(
@@ -124,6 +162,18 @@ export function useDutySelection() {
     },
   });
 
+  // Hidden-from-pool count for the top banner. Counts only slots the user
+  // could otherwise select (skips FULL and SELECTED — those are already
+  // visibly distinct), so the banner reflects the true "blocked by my
+  // own picks" cohort.
+  const conflictSummary = useMemo(() => {
+    const candidates = filteredSlots
+      .filter((s) => !s.flags[flagKey])
+      .filter((s) => !selected.some((sel) => sel.slotId === s.slotId))
+      .map(slotWindow);
+    return summarize(candidates);
+  }, [filteredSlots, flagKey, selected, summarize, slotWindow]);
+
   return {
     slots,
     filteredSlots,
@@ -134,6 +184,8 @@ export function useDutySelection() {
     isLoading: slotsQuery.isLoading || dutiesQuery.isLoading,
     error: slotsQuery.error || dutiesQuery.error,
     stateOf,
+    conflictFor,
+    conflictSummary,
     tryToggleSlot,
     removeSlot,
     clearSelection,

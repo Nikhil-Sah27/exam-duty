@@ -64,3 +64,41 @@ export function isMyDutyInRoom(
     return d.room === roomNumber || d.room === roomId;
   });
 }
+
+function toMinutes(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+}
+
+/**
+ * True when the viewer holds an assigned duty on the same day whose time
+ * window overlaps this slot but is NOT this exact room — i.e. picking this
+ * room would create a real conflict for them. Mirrors the conflict engine
+ * used by Select Duty so the Exams chips paint red in the same situations.
+ */
+export function hasTimeConflictForSlot(
+  duties: Duty[],
+  scheduleDate: string,
+  startTime: string,
+  endTime: string,
+  roomNumber: string,
+  roomId: string,
+): boolean {
+  const target = new Date(scheduleDate);
+  target.setHours(0, 0, 0, 0);
+  const start = toMinutes(startTime);
+  const end = toMinutes(endTime);
+  return duties.some((d) => {
+    if (d.status !== "assigned") return false;
+    const dDate = new Date(d.date);
+    dDate.setHours(0, 0, 0, 0);
+    if (dDate.getTime() !== target.getTime()) return false;
+    // Skip the exact same slot — that's MINE, not a conflict.
+    const sameSlot =
+      d.startTime === startTime &&
+      d.endTime === endTime &&
+      (d.room === roomNumber || d.room === roomId);
+    if (sameSlot) return false;
+    return toMinutes(d.startTime) < end && start < toMinutes(d.endTime);
+  });
+}

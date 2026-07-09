@@ -2,10 +2,33 @@ const mongoose = require("mongoose");
 
 const changeRequestSchema = new mongoose.Schema(
   {
+    // Distinguishes a per-duty (invigilator) request from a per-group (DCS)
+    // request. DCS users supervise a whole bundle of rooms — the unit of
+    // change is the DCSGroup, never an individual classroom.
+    scope: {
+      type: String,
+      enum: ["duty", "dcs_group"],
+      default: "duty",
+    },
     duty: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Duty",
-      required: [true, "Duty is required"],
+      // Required only for per-duty scope. DCS group swaps don't reference a
+      // single duty — they move the whole group's duties together at approval
+      // time. Service layer enforces the scope-specific requirement.
+      required: false,
+      default: null,
+    },
+    // DCS group refs. Populated only when scope === "dcs_group".
+    dcsSourceGroup: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "DCSGroup",
+      default: null,
+    },
+    dcsTargetGroup: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "DCSGroup",
+      default: null,
     },
     requestedBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -15,7 +38,7 @@ const changeRequestSchema = new mongoose.Schema(
     type: {
       type: String,
       required: [true, "Request type is required"],
-      enum: ["swap", "drop", "move"],
+      enum: ["swap", "drop", "move", "dcs_swap"],
     },
     reason: {
       type: String,
@@ -83,10 +106,24 @@ const changeRequestSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// One pending request per duty per teacher
+// One pending request per duty per teacher (per-duty scope).
 changeRequestSchema.index(
   { duty: 1, requestedBy: 1, status: 1 },
-  { unique: true, partialFilterExpression: { status: "pending" } }
+  {
+    unique: true,
+    partialFilterExpression: { status: "pending", scope: "duty" },
+  }
+);
+
+// One pending DCS swap per source group per teacher — the DCS analogue of the
+// rule above. Indexed on source group + requester so the same DCS can't queue
+// two swaps for the same group.
+changeRequestSchema.index(
+  { dcsSourceGroup: 1, requestedBy: 1, status: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { status: "pending", scope: "dcs_group" },
+  }
 );
 
 module.exports = mongoose.model("ChangeRequest", changeRequestSchema);

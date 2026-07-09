@@ -6,6 +6,7 @@ import { getRoleLabel, ROLE_BADGE_COLORS } from "@/shared/constants/roles";
 import { useDeleteUser } from "../hooks";
 import { UserProfile } from "../types";
 import ConfirmModal from "./ConfirmModal";
+import EditUserModal from "./EditUserModal";
 
 interface TeacherRowProps {
   user: UserProfile;
@@ -18,6 +19,7 @@ export default function TeacherRow({ user }: TeacherRowProps) {
   const deleteMutation = useDeleteUser();
 
   const [confirmAction, setConfirmAction] = useState<"delete" | "deactivate" | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
 
   const handleRowClick = () => {
     navigate(`/manage-duties/${user._id}`);
@@ -111,7 +113,7 @@ export default function TeacherRow({ user }: TeacherRowProps) {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                // Edit — placeholder for future implementation
+                setEditOpen(true);
               }}
               className="rounded p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
               title="Edit"
@@ -175,6 +177,12 @@ export default function TeacherRow({ user }: TeacherRowProps) {
         confirmLabel="Deactivate"
         variant="warning"
         isLoading={deleteMutation.isPending}
+      />
+
+      <EditUserModal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        user={user}
       />
     </>
   );

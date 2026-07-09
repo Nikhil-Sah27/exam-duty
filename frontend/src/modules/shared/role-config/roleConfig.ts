@@ -32,8 +32,8 @@ export interface RoleDashboardConfig {
   basePath: string;
   /** Default landing path inside this dashboard. */
   defaultPath: string;
-  /** RoomDutyFlags key indicating this role's slot occupancy. */
-  flagKey: keyof RoomDutyFlags;
+  /** RoomDutyFlags boolean key indicating this role's slot occupancy. */
+  flagKey: "invigilatorAssigned" | "rsAssigned" | "dcsAssigned";
   /** Sidebar nav items. */
   navItems: RoleNavItem[];
 }

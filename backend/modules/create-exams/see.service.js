@@ -8,6 +8,7 @@ const Semester = require("../department/semester.model");
 const AppError = require("../../shared/utils/AppError");
 const { withOptionalTransaction } = require("../../shared/utils/withOptionalTransaction");
 const dcsGroupService = require("../dcs/dcsGroup.service");
+const roomReservationService = require("../exam/roomReservation.service");
 
 /**
  * Same time-overlap math used elsewhere in the codebase.
@@ -256,6 +257,36 @@ const finalizeSEEPlan = async (data, userId) => {
       409,
     );
   }
+
+  // Global room-reservation check — reject if any physical room is already
+  // booked in an overlapping window (any exam type, semester, department).
+  const slotBySlotKey = new Map();
+  for (const s of schedules) {
+    const key = s.slotKey || s.localId;
+    slotBySlotKey.set(key, {
+      date: s.date,
+      startTime: s.startTime,
+      endTime: s.endTime,
+    });
+  }
+  const uniquePairs = new Set();
+  const reservationRequests = [];
+  for (const a of roomAssignments) {
+    const slot = slotBySlotKey.get(a.scheduleId);
+    if (!slot) continue;
+    const dedupe = `${a.scheduleId}|${a.roomId}`;
+    if (uniquePairs.has(dedupe)) continue;
+    uniquePairs.add(dedupe);
+    reservationRequests.push({
+      roomId: a.roomId,
+      date: slot.date,
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+    });
+  }
+  await roomReservationService.assertNoConflicts({
+    requests: reservationRequests,
+  });
 
   return withOptionalTransaction(async (session) => {
     const sessionOpt = session ? { session } : {};

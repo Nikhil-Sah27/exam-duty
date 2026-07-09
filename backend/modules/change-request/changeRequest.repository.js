@@ -7,7 +7,29 @@ const POPULATE_FIELDS = [
   { path: "reviewedBy", select: "name email" },
 ];
 
-// Deep populate: duty → exam, plus move-request target refs
+// Population shared by source + target DCS groups. Mirrors the populate set
+// the DCS module uses so the UI gets the same shape for both — schedule,
+// assigned rooms (with room + building), departments.
+const DCS_GROUP_POPULATE = {
+  select:
+    "examGroup schedule groupIndex dcsRequired assignedRooms assignedDepartments assignedStudents assignedTeacher status",
+  populate: [
+    { path: "examGroup", select: "examType semester startDate endDate" },
+    { path: "schedule", select: "date startTime endTime examGroup" },
+    {
+      path: "assignedRooms",
+      select: "room departments schedule",
+      populate: {
+        path: "room",
+        select: "roomNumber floor capacity building",
+        populate: { path: "building", select: "name" },
+      },
+    },
+    { path: "assignedTeacher", select: "name email phone department" },
+  ],
+};
+
+// Deep populate: duty → exam, plus move-request target refs and DCS group refs.
 const POPULATE_DEEP = [
   {
     path: "duty",
@@ -32,6 +54,11 @@ const POPULATE_DEEP = [
       populate: { path: "building", select: "name" },
     },
   },
+  // DCS scope refs. Both the source group (current assignment) and the target
+  // group (requested assignment) need full room + schedule context so the CS
+  // review screen and the requester's history can render without further reads.
+  { path: "dcsSourceGroup", ...DCS_GROUP_POPULATE },
+  { path: "dcsTargetGroup", ...DCS_GROUP_POPULATE },
 ];
 
 const create = (data) => {
@@ -51,6 +78,16 @@ const findById = (id) => {
 const findPendingByDutyAndUser = (dutyId, userId) => {
   return ChangeRequest.findOne({
     duty: dutyId,
+    requestedBy: userId,
+    status: "pending",
+    scope: "duty",
+  });
+};
+
+const findPendingDcsByUserAndSource = (sourceGroupId, userId) => {
+  return ChangeRequest.findOne({
+    scope: "dcs_group",
+    dcsSourceGroup: sourceGroupId,
     requestedBy: userId,
     status: "pending",
   });
@@ -87,6 +124,7 @@ module.exports = {
   findAll,
   findById,
   findPendingByDutyAndUser,
+  findPendingDcsByUserAndSource,
   updateById,
   findOpenByDutyIds,
   updateManyByIds,

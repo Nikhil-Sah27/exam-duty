@@ -34,6 +34,7 @@ const errorHandler = (err, req, res, next) => {
     success: false,
     statusCode,
     message,
+    ...(err.details !== undefined && { details: err.details }),
     ...(process.env.NODE_ENV === "development" && { stack: err.stack }),
   });
 };

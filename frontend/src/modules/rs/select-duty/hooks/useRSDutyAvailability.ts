@@ -1,9 +1,10 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import type { Duty } from "@/modules/duties/types";
 import {
-  findTimeConflict,
-  describeConflict,
-} from "@/modules/shared/duties/utils/timeConflictUtils";
+  useDutyConflicts,
+  type UseDutyConflictsResult,
+} from "@/modules/duties/hooks/useDutyConflicts";
+import type { ConflictAnalysis } from "@/modules/duties/services/dutyConflictService";
 import type { RSDutyGroup, RSGroupState, RSSelectionValidation } from "../types";
 
 /**
@@ -15,22 +16,56 @@ import type { RSDutyGroup, RSGroupState, RSSelectionValidation } from "../types"
  *               persisted assigned-duty on the same day
  *   AVAILABLE — none of the above
  *
- * Conflict detection reuses the shared `findTimeConflict` engine. RS groups
- * are pre-checked against (other selected groups + my persisted duties).
+ * Conflict detection delegates to the shared `useDutyConflicts` hook — same
+ * primitive Invigilator + DCS use, so the three flows stay aligned.
  */
+export interface UseRSDutyAvailabilityResult {
+  stateOf: (group: RSDutyGroup) => RSGroupState;
+  validate: (candidate: RSDutyGroup) => RSSelectionValidation;
+  conflictFor: (group: RSDutyGroup) => ConflictAnalysis;
+  summarize: UseDutyConflictsResult["summarize"];
+}
+
 export function useRSDutyAvailability(
   selected: RSDutyGroup[],
   myDuties: Duty[],
-) {
+): UseRSDutyAvailabilityResult {
+  const selectedWindows = useMemo(
+    () =>
+      selected.map((s) => ({
+        id: s.groupId,
+        date: s.date,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        roomNumber: s.rangeLabel,
+      })),
+    [selected],
+  );
+
+  const { isConflict, analyze, summarize } = useDutyConflicts({
+    selected: selectedWindows,
+    myDuties,
+  });
+
+  const groupWindow = useCallback(
+    (group: RSDutyGroup) => ({
+      id: group.groupId,
+      date: group.date,
+      startTime: group.startTime,
+      endTime: group.endTime,
+      roomNumber: group.rangeLabel,
+    }),
+    [],
+  );
+
   const stateOf = useCallback(
     (group: RSDutyGroup): RSGroupState => {
       if (selected.some((s) => s.groupId === group.groupId)) return "SELECTED";
       if (group.allAssigned) return "FULL";
-      const conflict = findConflictWith(group, selected, myDuties);
-      if (conflict) return "CONFLICT";
+      if (isConflict(groupWindow(group))) return "CONFLICT";
       return "AVAILABLE";
     },
-    [selected, myDuties],
+    [selected, isConflict, groupWindow],
   );
 
   const validate = useCallback(
@@ -44,41 +79,22 @@ export function useRSDutyAvailability(
       if (selected.some((s) => s.groupId === candidate.groupId)) {
         return { ok: false, reason: "This group is already in your selection." };
       }
-      const conflict = findConflictWith(candidate, selected, myDuties);
-      if (conflict) {
+      const analysis = analyze(groupWindow(candidate));
+      if (analysis.conflict) {
         return {
           ok: false,
-          reason: `Time conflict with ${describeConflict(conflict as never)} on the same day.`,
+          reason: analysis.reason || "This time conflicts with another duty.",
         };
       }
       return { ok: true };
     },
-    [selected, myDuties],
+    [selected, analyze, groupWindow],
   );
 
-  return { stateOf, validate };
-}
-
-function findConflictWith(
-  candidate: RSDutyGroup,
-  selected: RSDutyGroup[],
-  myDuties: Duty[],
-) {
-  const windows = selected.map((s) => ({
-    id: s.groupId,
-    date: s.date,
-    startTime: s.startTime,
-    endTime: s.endTime,
-    roomNumber: s.rangeLabel,
-  }));
-  return findTimeConflict(
-    {
-      id: candidate.groupId,
-      date: candidate.date,
-      startTime: candidate.startTime,
-      endTime: candidate.endTime,
-    },
-    windows,
-    myDuties,
+  const conflictFor = useCallback(
+    (group: RSDutyGroup) => analyze(groupWindow(group)),
+    [analyze, groupWindow],
   );
+
+  return { stateOf, validate, conflictFor, summarize };
 }

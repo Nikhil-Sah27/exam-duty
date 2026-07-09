@@ -18,7 +18,11 @@ import type { DutySlot, SelectionValidation } from "../types";
  * future role) can reuse them without duplicating logic.
  */
 
-const ROLE_LABEL: Record<keyof RoomDutyFlags, string> = {
+// Only the boolean flag keys can be passed as `flagKey`; teacher-detail
+// keys (added later for the modal) are read separately.
+type RoleFlagKey = "invigilatorAssigned" | "rsAssigned" | "dcsAssigned";
+
+const ROLE_LABEL: Record<RoleFlagKey, string> = {
   invigilatorAssigned: "invigilator",
   rsAssigned: "room superintendent",
   dcsAssigned: "DCS",
@@ -46,7 +50,7 @@ export function validateSelection(
   candidate: DutySlot,
   selected: DutySlot[],
   myDuties: Duty[],
-  flagKey: keyof RoomDutyFlags,
+  flagKey: RoleFlagKey,
 ): SelectionValidation {
   if (candidate.flags[flagKey]) {
     return {

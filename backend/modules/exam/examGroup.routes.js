@@ -26,5 +26,6 @@ router.delete("/schedules/:id", examScheduleController.remove);
 router.post("/rooms", examRoomController.create);
 router.get("/rooms", examRoomController.getBySchedule);
 router.delete("/rooms/:id", examRoomController.remove);
+router.post("/room-availability", examRoomController.getRoomAvailability);
 
 module.exports = router;

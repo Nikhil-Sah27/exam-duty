@@ -11,6 +11,7 @@ const AppError = require("../../shared/utils/AppError");
 const { generateExamDates } = require("./cie.utils");
 const { withOptionalTransaction } = require("../../shared/utils/withOptionalTransaction");
 const dcsGroupService = require("../dcs/dcsGroup.service");
+const roomReservationService = require("../exam/roomReservation.service");
 
 /**
  * Fetch departments with their semester + courses for a given semester name.
@@ -260,6 +261,36 @@ const assignRooms = async (data) => {
     roomGroups.get(key).departments.add(a.departmentCode);
   }
 
+  // Global room-reservation check — reject if any (roomId × schedule time)
+  // pair collides with an existing reservation in another exam.
+  const uniqueScheduleIds = [
+    ...new Set(Array.from(roomGroups.values()).map((g) => String(g.scheduleId))),
+  ];
+  const schedulesForAssignments = await ExamSchedule.find({
+    _id: { $in: uniqueScheduleIds },
+  });
+  const scheduleById = new Map(
+    schedulesForAssignments.map((s) => [String(s._id), s]),
+  );
+  const reservationRequests = Array.from(roomGroups.values()).map((g) => {
+    const schedule = scheduleById.get(String(g.scheduleId));
+    if (!schedule) {
+      throw new AppError(
+        `Room assignment references unknown schedule ${g.scheduleId}`,
+        400,
+      );
+    }
+    return {
+      roomId: g.roomId,
+      date: schedule.date,
+      startTime: schedule.startTime,
+      endTime: schedule.endTime,
+    };
+  });
+  await roomReservationService.assertNoConflicts({
+    requests: reservationRequests,
+  });
+
   // Create one ExamRoom per unique schedule+room with all departments merged
   const results = await Promise.all(
     Array.from(roomGroups.values()).map((group) =>
@@ -360,10 +391,22 @@ const finalizeCIEPlan = async (data, userId) => {
 
   validateDates(startDate, endDate);
 
-  // Every routine slot (unique date+shift) must appear in roomAssignments;
-  // otherwise the caller is trying to finalize while a slot has zero rooms.
+  // A routine entry with no course assignments is an intentionally-blank slot
+  // (user opted not to schedule any course for that date+shift). Drop these
+  // before validation and persistence so we neither require rooms for them
+  // nor create empty ExamSchedules.
+  const scheduledRoutine = routine.filter((r) =>
+    Object.values(r.assignments || {}).some((courseId) => Boolean(courseId)),
+  );
+  if (scheduledRoutine.length === 0) {
+    throw new AppError("At least one slot must have a course scheduled", 400);
+  }
+
+  // Every scheduled routine slot (unique date+shift) must appear in
+  // roomAssignments; otherwise the caller is trying to finalize while a slot
+  // that actually has an exam has zero rooms.
   const routineSlotKeys = new Set(
-    routine.map((r) => `${r.date}|${r.shiftIndex}`),
+    scheduledRoutine.map((r) => `${r.date}|${r.shiftIndex}`),
   );
   const assignmentSlotKeys = new Set(
     roomAssignments.map((a) => a.scheduleId), // frontend ships slotKey in this field
@@ -395,6 +438,48 @@ const finalizeCIEPlan = async (data, userId) => {
     );
   }
 
+  // ---- Global room-reservation conflict check ----
+  //
+  // Resolve every (roomId × date × time-window) tuple we're about to reserve
+  // and reject if any physical room is already booked — regardless of exam
+  // type, semester, or department. This must run before the transaction so
+  // we surface a clean 409 without opening a Mongo session.
+  const slotByKey = new Map();
+  for (const entry of scheduledRoutine) {
+    const key = `${entry.date}|${entry.shiftIndex}`;
+    if (slotByKey.has(key)) continue;
+    const shift = shifts[entry.shiftIndex];
+    if (!shift) {
+      throw new AppError(
+        `Routine references unknown shiftIndex ${entry.shiftIndex}`,
+        400,
+      );
+    }
+    slotByKey.set(key, {
+      date: entry.date,
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+    });
+  }
+  const uniquePairs = new Set();
+  const reservationRequests = [];
+  for (const a of roomAssignments) {
+    const slot = slotByKey.get(a.scheduleId);
+    if (!slot) continue; // covered by the earlier scheduleId-in-routine check
+    const dedupe = `${a.scheduleId}|${a.roomId}`;
+    if (uniquePairs.has(dedupe)) continue;
+    uniquePairs.add(dedupe);
+    reservationRequests.push({
+      roomId: a.roomId,
+      date: slot.date,
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+    });
+  }
+  await roomReservationService.assertNoConflicts({
+    requests: reservationRequests,
+  });
+
   // ---- Transactional persistence ----
 
   return withOptionalTransaction(async (session) => {
@@ -416,7 +501,7 @@ const finalizeCIEPlan = async (data, userId) => {
     // 1 ExamSchedule per unique (date, shiftIndex). Keep a slotKey → _id map
     // so room assignments can resolve their schedule ref.
     const slotKeyToScheduleId = new Map();
-    for (const entry of routine) {
+    for (const entry of scheduledRoutine) {
       const slotKey = `${entry.date}|${entry.shiftIndex}`;
       if (slotKeyToScheduleId.has(slotKey)) continue;
 
@@ -440,7 +525,7 @@ const finalizeCIEPlan = async (data, userId) => {
     }
 
     // CIEPlanEntries — one per (schedule × department × course).
-    for (const entry of routine) {
+    for (const entry of scheduledRoutine) {
       const scheduleId = slotKeyToScheduleId.get(
         `${entry.date}|${entry.shiftIndex}`,
       );

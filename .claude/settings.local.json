@@ -115,7 +115,10 @@
       "Bash(python -c \"import json,sys; print\\(json.load\\(sys.stdin\\)\\)\")",
       "Bash(python -c \"import json,sys; print\\('   ', json.load\\(sys.stdin\\)['count']\\)\")",
       "Bash(PYTHONIOENCODING=utf-8 python -c ' *)",
-      "Bash(python -c \"import json,sys; r=json.load\\(sys.stdin\\); print\\('  ', 'cancelled' if r.get\\('success'\\) else 'FAIL:', r.get\\('message',''\\)\\)\")"
+      "Bash(python -c \"import json,sys; r=json.load\\(sys.stdin\\); print\\('  ', 'cancelled' if r.get\\('success'\\) else 'FAIL:', r.get\\('message',''\\)\\)\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('count', d.get\\('count'\\)\\); print\\([{'_id':g['_id'],'groupIndex':g['groupIndex'],'rooms':[r['room']['roomNumber'] for r in g['assignedRooms']],'date':g['schedule']['date'],'time':g['schedule']['startTime']+'-'+g['schedule']['endTime']} for g in d['data'][:5]]\\)\")",
+      "Bash(xargs ls -la)",
+      "Bash(break)"
     ]
   }
 }

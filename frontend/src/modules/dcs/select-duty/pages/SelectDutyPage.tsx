@@ -4,6 +4,7 @@ import type { DutyFilters } from "@/modules/invigilator/select-duty/types";
 import { useDcsDutySelection } from "../hooks/useDcsDutySelection";
 import DcsGroupList from "../components/DcsGroupList";
 import DcsSelectionPanel from "../components/DcsSelectionPanel";
+import DutyStatusLegend from "@/modules/shared/components/DutyStatusLegend";
 
 /**
  * DCS Select Duty page. Same outer layout as the Invigilator/RS pages — 2/3
@@ -18,10 +19,13 @@ export default function SelectDutyPage() {
     selected,
     filters,
     feedback,
+    conflictSummary,
     availableDepartments,
     isLoading,
     error,
+    ordinalMap,
     stateOf,
+    conflictFor,
     tryToggleGroup,
     removeGroup,
     clearSelection,
@@ -50,6 +54,8 @@ export default function SelectDutyPage() {
         </div>
       </div>
 
+      <DutyStatusLegend />
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           <DutyFilterBar
@@ -64,7 +70,13 @@ export default function SelectDutyPage() {
             {groups.length !== 1 ? "s" : ""}
           </p>
 
-          {feedback && (
+          {conflictSummary.banner && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              {conflictSummary.banner}
+            </div>
+          )}
+
+          {feedback && !conflictSummary.banner && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
               {feedback}
             </div>
@@ -83,6 +95,8 @@ export default function SelectDutyPage() {
               groups={filteredGroups}
               stateOf={stateOf}
               onToggle={tryToggleGroup}
+              conflictFor={conflictFor}
+              ordinalMap={ordinalMap}
             />
           )}
         </div>

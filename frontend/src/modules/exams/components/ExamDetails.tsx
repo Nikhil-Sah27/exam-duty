@@ -44,6 +44,10 @@ export default function ExamDetails() {
     null
   );
 
+  const selectedSchedule = selectedScheduleId
+    ? (group?.schedules || []).find((s) => s._id === selectedScheduleId) || null
+    : null;
+
   if (isLoading) return <p className="text-gray-500">Loading...</p>;
   if (!group) return <p className="text-red-600">Exam group not found.</p>;
 
@@ -131,6 +135,15 @@ export default function ExamDetails() {
       {/* Room Modal */}
       <AddRoomModal
         open={roomModalOpen}
+        schedule={
+          selectedSchedule
+            ? {
+                date: new Date(selectedSchedule.date).toISOString().slice(0, 10),
+                startTime: selectedSchedule.startTime,
+                endTime: selectedSchedule.endTime,
+              }
+            : null
+        }
         onClose={() => {
           setRoomModalOpen(false);
           setSelectedScheduleId(null);

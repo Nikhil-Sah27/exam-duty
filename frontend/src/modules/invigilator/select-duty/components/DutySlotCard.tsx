@@ -1,13 +1,30 @@
-import { Calendar, Clock, DoorOpen, CheckCircle2, Lock } from "lucide-react";
+import {
+  AlertTriangle,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  DoorOpen,
+  Lock,
+} from "lucide-react";
 import { getTypeColor } from "@/modules/shared/exams/utils/examStatusUtils";
+import type { ConflictAnalysis } from "@/modules/duties/services/dutyConflictService";
 import type { DutySlot, SlotState } from "../types";
 
-const STATE_STYLES: Record<SlotState, { border: string; bg: string; label: string; labelColor: string }> = {
+/**
+ * Card style table. Teacher palette is strictly green/blue/red — Full and
+ * Conflict both paint red because from the teacher's perspective both mean
+ * "I cannot take this duty". The visible TIME CONFLICT badge inside the
+ * card disambiguates the two without needing a separate colour.
+ */
+const STATE_STYLES: Record<
+  SlotState,
+  { border: string; bg: string; label: string; labelColor: string }
+> = {
   AVAILABLE: {
-    border: "border-green-300",
-    bg: "bg-white hover:bg-green-50",
+    border: "border-emerald-300",
+    bg: "bg-white hover:bg-emerald-50",
     label: "Available",
-    labelColor: "text-green-700",
+    labelColor: "text-emerald-700",
   },
   SELECTED: {
     border: "border-blue-500 ring-2 ring-blue-200",
@@ -18,8 +35,14 @@ const STATE_STYLES: Record<SlotState, { border: string; bg: string; label: strin
   FULL: {
     border: "border-red-200",
     bg: "bg-red-50/40 opacity-60 cursor-not-allowed",
-    label: "Full",
+    label: "Occupied",
     labelColor: "text-red-600",
+  },
+  CONFLICT: {
+    border: "border-red-300",
+    bg: "bg-red-50/50 opacity-70 cursor-not-allowed",
+    label: "Time Conflict",
+    labelColor: "text-red-700",
   },
 };
 
@@ -33,6 +56,9 @@ const DEPT_COLORS: Record<string, string> = {
   EEE: "bg-rose-100 text-rose-700",
   AIML: "bg-indigo-100 text-indigo-700",
 };
+
+const CONFLICT_TOOLTIP =
+  "You already have a duty assigned or selected during this time slot. Please remove the conflicting selection first.";
 
 function getDeptColor(d: string): string {
   return DEPT_COLORS[d.toUpperCase()] || "bg-gray-100 text-gray-600";
@@ -56,17 +82,28 @@ interface DutySlotCardProps {
   slot: DutySlot;
   state: SlotState;
   onToggle: () => void;
+  /** Conflict analysis for tooltip + in-card message. */
+  conflict?: ConflictAnalysis;
 }
 
-export default function DutySlotCard({ slot, state, onToggle }: DutySlotCardProps) {
+export default function DutySlotCard({
+  slot,
+  state,
+  onToggle,
+  conflict,
+}: DutySlotCardProps) {
   const styles = STATE_STYLES[state];
-  const disabled = state === "FULL";
+  const disabled = state === "FULL" || state === "CONFLICT";
+  const tooltip =
+    state === "CONFLICT" ? conflict?.reason || CONFLICT_TOOLTIP : undefined;
 
   return (
     <button
       onClick={disabled ? undefined : onToggle}
       disabled={disabled}
-      className={`flex flex-col gap-2 rounded-xl border-2 p-4 text-left transition-all ${styles.border} ${styles.bg}`}
+      aria-disabled={disabled}
+      title={tooltip}
+      className={`flex flex-col gap-2 rounded-xl border-2 p-4 text-left transition-all ${styles.border} ${styles.bg} disabled:cursor-not-allowed`}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
@@ -79,9 +116,12 @@ export default function DutySlotCard({ slot, state, onToggle }: DutySlotCardProp
             Sem {slot.semester}
           </span>
         </div>
-        <span className={`flex items-center gap-1 text-[11px] font-semibold ${styles.labelColor}`}>
+        <span
+          className={`flex items-center gap-1 text-[11px] font-semibold ${styles.labelColor}`}
+        >
           {state === "SELECTED" && <CheckCircle2 className="h-3 w-3" />}
           {state === "FULL" && <Lock className="h-3 w-3" />}
+          {state === "CONFLICT" && <AlertTriangle className="h-3 w-3" />}
           {styles.label}
         </span>
       </div>
@@ -115,6 +155,20 @@ export default function DutySlotCard({ slot, state, onToggle }: DutySlotCardProp
               {d}
             </span>
           ))}
+        </div>
+      )}
+
+      {state === "CONFLICT" && (
+        <div className="mt-1 flex items-start gap-1.5 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+          <span>
+            <span className="font-semibold uppercase tracking-wider">
+              Time Conflict
+            </span>
+            <span className="ml-1">
+              — You already have a duty during this date and time.
+            </span>
+          </span>
         </div>
       )}
     </button>

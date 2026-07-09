@@ -39,7 +39,27 @@ export function useRSDutySelection() {
   const myDuties = dutiesQuery.data || [];
 
   const { groups, filteredGroups } = useRSDutyGrouping(slots, filters);
-  const { stateOf, validate } = useRSDutyAvailability(selected, myDuties);
+  const { stateOf, validate, conflictFor, summarize } = useRSDutyAvailability(
+    selected,
+    myDuties,
+  );
+
+  // Friendly banner that replaces the technical "Time conflict with X" string.
+  // Counts only groups the user could otherwise pick (not full, not already
+  // selected) so the number reflects the cohort that's currently hidden.
+  const conflictSummary = useMemo(() => {
+    const candidates = filteredGroups
+      .filter((g) => !g.allAssigned)
+      .filter((g) => !selected.some((s) => s.groupId === g.groupId))
+      .map((g) => ({
+        id: g.groupId,
+        date: g.date,
+        startTime: g.startTime,
+        endTime: g.endTime,
+        roomNumber: g.rangeLabel,
+      }));
+    return summarize(candidates);
+  }, [filteredGroups, selected, summarize]);
 
   const availableDepartments = useMemo(() => {
     const set = new Set<string>();
@@ -119,11 +139,13 @@ export function useRSDutySelection() {
     selected,
     filters,
     feedback,
+    conflictSummary,
     availableDepartments,
     myDuties,
     isLoading: slotsQuery.isLoading || dutiesQuery.isLoading,
     error: slotsQuery.error || dutiesQuery.error,
     stateOf,
+    conflictFor,
     tryToggleGroup,
     removeGroup,
     clearSelection,

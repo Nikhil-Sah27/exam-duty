@@ -23,6 +23,9 @@ const invalidateAll = (qc: ReturnType<typeof useQueryClient>) => {
   // Approval/reject can move teachers between duties, so refresh duty-related caches too.
   qc.invalidateQueries({ queryKey: ["shared", "duty-status"] });
   qc.invalidateQueries({ queryKey: ["shared", "duties-by-teacher"] });
+  // DCS group swaps move whole groups between teachers — invalidate the
+  // group caches the DCS dashboard, Upcoming Duties, and Select Duty share.
+  qc.invalidateQueries({ queryKey: ["dcs"] });
 };
 
 export function useAllChangeRequests(status?: ChangeRequestStatus) {

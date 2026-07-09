@@ -1,4 +1,5 @@
-export type ChangeRequestType = "swap" | "drop" | "move";
+export type ChangeRequestType = "swap" | "drop" | "move" | "dcs_swap";
+export type ChangeRequestScope = "duty" | "dcs_group";
 export type ChangeRequestStatus = "pending" | "approved" | "rejected";
 
 export interface ChangeRequestUser {
@@ -47,9 +48,54 @@ export interface RequestedExamRoomRef {
   };
 }
 
+/**
+ * Populated DCSGroup as it appears on a populated ChangeRequest. Matches the
+ * shape produced by changeRequest.repository.DCS_GROUP_POPULATE — schedule,
+ * assigned rooms (with building info), departments, and exam-group meta.
+ */
+export interface DcsGroupRef {
+  _id: string;
+  groupIndex: number;
+  dcsRequired: number;
+  status: "open" | "claimed" | "released";
+  assignedDepartments: string[];
+  assignedStudents: number;
+  examGroup: {
+    _id: string;
+    examType: string;
+    semester: number;
+  } | null;
+  schedule: {
+    _id: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+  };
+  assignedRooms: Array<{
+    _id: string;
+    departments: string[];
+    room: {
+      _id: string;
+      roomNumber: string;
+      floor: number;
+      capacity: number;
+      building?: { _id: string; name: string };
+    };
+  }>;
+  assignedTeacher: {
+    _id: string;
+    name: string;
+    email: string;
+    phone?: string | null;
+    department?: string | null;
+  } | null;
+}
+
 export interface ChangeRequest {
   _id: string;
-  duty: ChangeRequestDuty;
+  scope?: ChangeRequestScope;
+  /** Non-null for per-duty (invigilator) requests. Null for DCS group swaps. */
+  duty: ChangeRequestDuty | null;
   requestedBy: ChangeRequestUser;
   type: ChangeRequestType;
   reason: string;
@@ -61,6 +107,9 @@ export interface ChangeRequest {
   requestedDate: string | null;
   requestedStartTime: string | null;
   requestedEndTime: string | null;
+  /** DCS scope — populated only when type === "dcs_swap". */
+  dcsSourceGroup: DcsGroupRef | null;
+  dcsTargetGroup: DcsGroupRef | null;
   status: ChangeRequestStatus;
   reviewedBy: { _id: string; name: string; email: string } | null;
   reviewedAt: string | null;
@@ -70,7 +119,8 @@ export interface ChangeRequest {
 }
 
 export interface CreateChangeRequestPayload {
-  duty: string;
+  /** Duty-scoped requests. Omit for "dcs_swap". */
+  duty?: string;
   type: ChangeRequestType;
   reason: string;
   /** For "swap" requests. */
@@ -78,6 +128,9 @@ export interface CreateChangeRequestPayload {
   /** For "move" requests — the target schedule + examRoom IDs. */
   requestedSchedule?: string;
   requestedExamRoom?: string;
+  /** For "dcs_swap" requests — source/target DCSGroup IDs. */
+  dcsSourceGroup?: string;
+  dcsTargetGroup?: string;
 }
 
 /** A replacement slot returned by GET /change-requests/replacements/:dutyId. */

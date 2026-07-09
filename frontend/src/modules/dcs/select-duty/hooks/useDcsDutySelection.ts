@@ -3,6 +3,9 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/shared/store/auth.store";
 import { useDutiesByTeacher } from "@/modules/shared/exams/hooks/useSharedExamData";
 import { useSelectableDuties } from "@/modules/duties/hooks/useSelectableDuties";
+import { useDutyConflicts } from "@/modules/duties/hooks/useDutyConflicts";
+import type { ConflictAnalysis } from "@/modules/duties/services/dutyConflictService";
+import { buildDcsGroupOrdinalMap } from "@/modules/duties/services/dcsGroupingService";
 import { useDcsGroups } from "./useDcsGroups";
 import { claimDcsGroup } from "../services/dcsDutyService";
 import {
@@ -71,7 +74,41 @@ export function useDcsDutySelection() {
     return [...set].sort();
   }, [allGroups]);
 
+  // Cross-schedule display ordinal map. Keyed by `_id` so each card can look
+  // up its global ordinal without caring about position in the filtered list.
+  const ordinalMap = useMemo(
+    () => buildDcsGroupOrdinalMap(allGroups),
+    [allGroups],
+  );
+
   const myUserId = user?.id;
+
+  // Shared conflict layer — same engine Invigilator + RS use, so the three
+  // flows can never diverge in what counts as a "time conflict".
+  const selectedWindows = useMemo(
+    () =>
+      selected.map((s) => ({
+        id: s._id,
+        date: s.schedule.date,
+        startTime: s.schedule.startTime,
+        endTime: s.schedule.endTime,
+      })),
+    [selected],
+  );
+  const { isConflict, analyze, summarize } = useDutyConflicts({
+    selected: selectedWindows,
+    myDuties,
+  });
+
+  const groupWindow = useCallback(
+    (group: DcsGroup) => ({
+      id: group._id,
+      date: group.schedule.date,
+      startTime: group.schedule.startTime,
+      endTime: group.schedule.endTime,
+    }),
+    [],
+  );
 
   /**
    * Compute the state a card should render in. "MINE" wins over "OCCUPIED"
@@ -83,38 +120,16 @@ export function useDcsDutySelection() {
       if (group.status === "claimed") {
         return group.assignedTeacher?._id === myUserId ? "MINE" : "OCCUPIED";
       }
-      const isSelected = selected.some((s) => s._id === group._id);
-      if (isSelected) return "SELECTED";
-
-      const sched = group.schedule;
-
-      // Conflict against my existing duties (any role) at the same time.
-      const dayKey = new Date(sched.date).toISOString().slice(0, 10);
-      const dutyConflict = myDuties.some((d) => {
-        if (d.status !== "assigned") return false;
-        const dDay = new Date(d.date).toISOString().slice(0, 10);
-        if (dDay !== dayKey) return false;
-        return overlaps(d.startTime, d.endTime, sched.startTime, sched.endTime);
-      });
-      if (dutyConflict) return "CONFLICT";
-
-      // Conflict against other currently-selected DCS groups in this session.
-      const selectedConflict = selected.some((s) => {
-        if (s._id === group._id) return false;
-        const sDay = new Date(s.schedule.date).toISOString().slice(0, 10);
-        if (sDay !== dayKey) return false;
-        return overlaps(
-          s.schedule.startTime,
-          s.schedule.endTime,
-          sched.startTime,
-          sched.endTime,
-        );
-      });
-      if (selectedConflict) return "CONFLICT";
-
+      if (selected.some((s) => s._id === group._id)) return "SELECTED";
+      if (isConflict(groupWindow(group))) return "CONFLICT";
       return "AVAILABLE";
     },
-    [myDuties, myUserId, selected],
+    [myUserId, selected, isConflict, groupWindow],
+  );
+
+  const conflictFor = useCallback(
+    (group: DcsGroup): ConflictAnalysis => analyze(groupWindow(group)),
+    [analyze, groupWindow],
   );
 
   const validate = useCallback(
@@ -127,14 +142,17 @@ export function useDcsDutySelection() {
         return { ok: false, reason: "You've already claimed this group." };
       }
       if (state === "CONFLICT") {
+        const reason = analyze(groupWindow(group)).reason;
         return {
           ok: false,
-          reason: "This time conflicts with another duty you hold or have selected.",
+          reason:
+            reason ||
+            "This time conflicts with another duty you hold or have selected.",
         };
       }
       return { ok: true };
     },
-    [stateOf],
+    [stateOf, analyze, groupWindow],
   );
 
   const tryToggleGroup = useCallback(
@@ -206,17 +224,31 @@ export function useDcsDutySelection() {
     },
   });
 
+  // Friendly hidden-count banner that replaces "Time conflict with X" copy.
+  // Excludes groups that are already OCCUPIED, MINE, or SELECTED — the
+  // remaining cohort is what the user would otherwise still try to click.
+  const conflictSummary = useMemo(() => {
+    const candidates = filteredGroups
+      .filter((g) => g.status !== "claimed")
+      .filter((g) => !selected.some((s) => s._id === g._id))
+      .map(groupWindow);
+    return summarize(candidates);
+  }, [filteredGroups, selected, summarize, groupWindow]);
+
   return {
     groups: allGroups,
     filteredGroups,
     selected,
     filters,
     feedback,
+    conflictSummary,
     availableDepartments,
     myDuties,
     isLoading: groupsQuery.isLoading || dutiesQuery.isLoading,
     error: groupsQuery.error || dutiesQuery.error,
+    ordinalMap,
     stateOf,
+    conflictFor,
     tryToggleGroup,
     removeGroup,
     clearSelection,
@@ -226,8 +258,4 @@ export function useDcsDutySelection() {
     isSubmitting: submitMutation.isPending,
     submitResults: submitMutation.data,
   };
-}
-
-function overlaps(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
-  return aStart < bEnd && bStart < aEnd;
 }

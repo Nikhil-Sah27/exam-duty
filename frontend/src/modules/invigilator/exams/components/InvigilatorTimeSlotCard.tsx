@@ -1,13 +1,18 @@
 import { useState } from "react";
 import { Clock, DoorOpen } from "lucide-react";
+import { useAuthStore } from "@/shared/store/auth.store";
 import type {
   ExamSchedule,
   DutyStatusMap,
   Duty,
 } from "@/modules/shared/exams/types/exam.types";
 import { getDutyStatus } from "@/modules/shared/exams/utils/dutyStatusUtils";
-import { isMyDutyInRoom } from "@/modules/shared/exams/utils/examStatusUtils";
-import RoomChip from "@/modules/exams/components/RoomChip";
+import {
+  hasTimeConflictForSlot,
+  isMyDutyInRoom,
+} from "@/modules/shared/exams/utils/examStatusUtils";
+import type { OperationalRoleKey } from "@/modules/shared/utils/assignmentStatusUtils";
+import InvigilatorRoomChip from "./InvigilatorRoomChip";
 import InvigilatorExamDetailsModal from "./InvigilatorExamDetailsModal";
 
 function formatTime(time: string): string {
@@ -30,6 +35,8 @@ export default function InvigilatorTimeSlotCard({
 }: InvigilatorTimeSlotCardProps) {
   const rooms = schedule.rooms || [];
   const [selectedRoomIdx, setSelectedRoomIdx] = useState<number | null>(null);
+  const userRole = useAuthStore((s) => s.user?.role);
+  const viewerRole = (userRole as OperationalRoleKey) || "invigilator";
 
   const selectedRoom = selectedRoomIdx !== null ? rooms[selectedRoomIdx] : null;
   const selectedFlags =
@@ -65,12 +72,34 @@ export default function InvigilatorTimeSlotCard({
           <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {rooms.map((r, idx) => {
               const flags = dutyStatusMap?.[r._id];
-              const status = getDutyStatus(flags);
+              const mine = isMyDutyInRoom(
+                myDuties,
+                schedule.date,
+                schedule.startTime,
+                schedule.endTime,
+                r.room.roomNumber,
+                r.room._id,
+              );
+              // Conflict = a real overlap with another duty the viewer holds.
+              // Skipped when this exact slot is already MINE (handled above).
+              const conflict =
+                !mine &&
+                hasTimeConflictForSlot(
+                  myDuties,
+                  schedule.date,
+                  schedule.startTime,
+                  schedule.endTime,
+                  r.room.roomNumber,
+                  r.room._id,
+                );
               return (
-                <RoomChip
+                <InvigilatorRoomChip
                   key={r._id}
                   assignment={r}
-                  status={status}
+                  flags={flags}
+                  viewerRole={viewerRole}
+                  isMine={mine}
+                  hasConflict={conflict}
                   onClick={() => setSelectedRoomIdx(idx)}
                 />
               );

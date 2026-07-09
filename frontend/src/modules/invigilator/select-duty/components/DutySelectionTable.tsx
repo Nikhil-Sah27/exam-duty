@@ -1,4 +1,4 @@
-import { CheckCircle2, Lock } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Lock } from "lucide-react";
 import type { DutySlot, SlotState } from "../types";
 
 function formatDate(s: string): string {
@@ -7,6 +7,9 @@ function formatDate(s: string): string {
     month: "short",
   });
 }
+
+const CONFLICT_TOOLTIP =
+  "You already have a duty assigned or selected during this time slot. Please remove the conflicting selection first.";
 
 interface DutySelectionTableProps {
   slots: DutySlot[];
@@ -38,14 +41,22 @@ export default function DutySelectionTable({
             const state = stateOf(slot);
             const isSelected = state === "SELECTED";
             const isFull = state === "FULL";
+            const isConflict = state === "CONFLICT";
+            const rowMuted = isFull || isConflict ? "opacity-60" : "";
             return (
-              <tr key={slot.slotId} className="border-b border-gray-50 last:border-b-0">
+              <tr
+                key={slot.slotId}
+                className={`border-b border-gray-50 last:border-b-0 ${rowMuted}`}
+                title={isConflict ? CONFLICT_TOOLTIP : undefined}
+              >
                 <td className="px-4 py-2.5">
                   <div className="flex items-center gap-1.5">
                     <span className="rounded bg-gray-800 px-1.5 py-0.5 text-[10px] font-bold text-white">
                       {slot.examType}
                     </span>
-                    <span className="text-xs text-gray-500">Sem {slot.semester}</span>
+                    <span className="text-xs text-gray-500">
+                      Sem {slot.semester}
+                    </span>
                   </div>
                 </td>
                 <td className="px-4 py-2.5 text-xs text-gray-700">
@@ -62,11 +73,20 @@ export default function DutySelectionTable({
                 <td className="px-4 py-2.5 text-xs text-gray-500">
                   {slot.departments.join(", ") || "—"}
                 </td>
-                <td className="px-4 py-2.5 text-xs text-gray-500">{slot.capacity}</td>
+                <td className="px-4 py-2.5 text-xs text-gray-500">
+                  {slot.capacity}
+                </td>
                 <td className="px-4 py-2.5 text-right">
                   {isFull ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600">
                       <Lock className="h-3 w-3" /> Full
+                    </span>
+                  ) : isConflict ? (
+                    <span
+                      className="inline-flex cursor-not-allowed items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700"
+                      title={CONFLICT_TOOLTIP}
+                    >
+                      <AlertTriangle className="h-3 w-3" /> Time Conflict
                     </span>
                   ) : (
                     <button
@@ -92,7 +112,10 @@ export default function DutySelectionTable({
           })}
           {slots.length === 0 && (
             <tr>
-              <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-400">
+              <td
+                colSpan={7}
+                className="px-4 py-8 text-center text-sm text-gray-400"
+              >
                 No slots match the current filters.
               </td>
             </tr>

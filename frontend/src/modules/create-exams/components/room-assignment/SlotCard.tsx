@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Calendar, Clock } from "lucide-react";
-import type { SlotAllocation, BuildingGrouped, RoomInfo, SeatSharingPlanItem } from "../../types";
+import type { SlotAllocation, BuildingGrouped, RoomInfo, SeatSharingPlanItem, ReservationInfo } from "../../types";
 import { formatDate } from "../../utils/dateUtils";
 import { getSlotEffectiveSummary } from "../../selectors/allocationSelectors";
 import DepartmentAllocationCard from "./DepartmentAllocationCard";
@@ -10,6 +10,8 @@ interface SlotCardProps {
   buildings: BuildingGrouped[];
   avgStudentsPerClass: number;
   disabledRoomIds: Set<string>;
+  /** roomId → reservation info for rooms already booked by another exam. */
+  reservedRoomInfo?: Map<string, ReservationInfo>;
   defaultExpanded?: boolean;
   onAddRoom: (deptId: string, room: RoomInfo) => void;
   onRemoveRoom: (deptId: string, roomId: string) => void;
@@ -22,6 +24,7 @@ export default function SlotCard({
   buildings,
   avgStudentsPerClass,
   disabledRoomIds,
+  reservedRoomInfo,
   defaultExpanded = false,
   onAddRoom,
   onRemoveRoom,
@@ -143,6 +146,7 @@ export default function SlotCard({
               buildings={buildings}
               avgStudentsPerClass={avgStudentsPerClass}
               disabledRoomIds={disabledRoomIds}
+              reservedRoomInfo={reservedRoomInfo}
               defaultExpanded={activeDepts[firstUncoveredIdx]?.departmentId === dept.departmentId}
               onAddRoom={(room) => onAddRoom(dept.departmentId, room)}
               onRemoveRoom={(roomId) => onRemoveRoom(dept.departmentId, roomId)}

@@ -8,6 +8,7 @@ import {
   DoorOpen,
 } from "lucide-react";
 import RSDutyRoomChips from "./RSDutyRoomChips";
+import type { ConflictAnalysis } from "@/modules/duties/services/dutyConflictService";
 import type { RSDutyGroup, RSGroupState } from "../types";
 
 const STATE_STYLES: Record<
@@ -15,10 +16,10 @@ const STATE_STYLES: Record<
   { border: string; bg: string; label: string; labelColor: string }
 > = {
   AVAILABLE: {
-    border: "border-green-300",
-    bg: "bg-white hover:bg-green-50",
+    border: "border-emerald-300",
+    bg: "bg-white hover:bg-emerald-50",
     label: "Available",
-    labelColor: "text-green-700",
+    labelColor: "text-emerald-700",
   },
   SELECTED: {
     border: "border-blue-500 ring-2 ring-blue-200",
@@ -29,14 +30,16 @@ const STATE_STYLES: Record<
   FULL: {
     border: "border-red-200",
     bg: "bg-red-50/40 opacity-60 cursor-not-allowed",
-    label: "Full",
+    label: "Occupied",
     labelColor: "text-red-600",
   },
+  // Teacher palette: Full and Conflict both paint red. Inside-card badge
+  // disambiguates without needing a separate amber colour.
   CONFLICT: {
-    border: "border-amber-300",
-    bg: "bg-amber-50/60 opacity-70 cursor-not-allowed",
-    label: "Conflict",
-    labelColor: "text-amber-700",
+    border: "border-red-300",
+    bg: "bg-red-50/50 opacity-70 cursor-not-allowed",
+    label: "Time Conflict",
+    labelColor: "text-red-700",
   },
 };
 
@@ -50,6 +53,9 @@ const DEPT_COLORS: Record<string, string> = {
   EEE: "bg-rose-100 text-rose-700",
   AIML: "bg-indigo-100 text-indigo-700",
 };
+
+const CONFLICT_TOOLTIP =
+  "You already have a duty assigned or selected during this time slot. Please remove the conflicting selection first.";
 
 function getDeptColor(d: string): string {
   return DEPT_COLORS[d.toUpperCase()] || "bg-gray-100 text-gray-600";
@@ -73,21 +79,28 @@ interface RSDutyGroupCardProps {
   group: RSDutyGroup;
   state: RSGroupState;
   onToggle: () => void;
+  /** Conflict analysis when state === CONFLICT — drives tooltip + reason text. */
+  conflict?: ConflictAnalysis;
 }
 
 export default function RSDutyGroupCard({
   group,
   state,
   onToggle,
+  conflict,
 }: RSDutyGroupCardProps) {
   const styles = STATE_STYLES[state];
   const disabled = state === "FULL" || state === "CONFLICT";
+  const tooltip =
+    state === "CONFLICT" ? conflict?.reason || CONFLICT_TOOLTIP : undefined;
 
   return (
     <button
       onClick={disabled ? undefined : onToggle}
       disabled={disabled}
-      className={`flex flex-col gap-2.5 rounded-xl border-2 p-4 text-left transition-all ${styles.border} ${styles.bg}`}
+      aria-disabled={disabled}
+      title={tooltip}
+      className={`flex flex-col gap-2.5 rounded-xl border-2 p-4 text-left transition-all ${styles.border} ${styles.bg} disabled:cursor-not-allowed`}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
@@ -144,6 +157,20 @@ export default function RSDutyGroupCard({
               {d}
             </span>
           ))}
+        </div>
+      )}
+
+      {state === "CONFLICT" && (
+        <div className="flex items-start gap-1.5 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+          <span>
+            <span className="font-semibold uppercase tracking-wider">
+              Time Conflict
+            </span>
+            <span className="ml-1">
+              — You already have a duty during this date and time.
+            </span>
+          </span>
         </div>
       )}
     </button>

@@ -7,6 +7,7 @@ import type {
   FinalizeCIEPayload,
   ApiResponse,
   CreateExamsStatusResponse,
+  ReservationInfo,
 } from "../types";
 
 export const fetchCreateExamsStatus = async (): Promise<string> => {
@@ -59,6 +60,22 @@ export const finalizeCIEExam = async (
   const res = await api.post<ApiResponse<unknown>>(
     "/create-exams/cie/finalize",
     payload,
+  );
+  return res.data.data;
+};
+
+/**
+ * Bulk look-up: for each `{date, startTime, endTime}` slot, ask the backend
+ * which rooms are already reserved in overlapping time windows across ALL
+ * exams. `excludeExamGroupId` lets an edit flow ignore its own reservations.
+ */
+export const fetchRoomAvailability = async (
+  slots: { date: string; startTime: string; endTime: string }[],
+  excludeExamGroupId?: string | null,
+): Promise<Record<string, ReservationInfo[]>> => {
+  const res = await api.post<ApiResponse<Record<string, ReservationInfo[]>>>(
+    "/exam-groups/room-availability",
+    { slots, excludeExamGroupId: excludeExamGroupId || null },
   );
   return res.data.data;
 };

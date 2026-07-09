@@ -1,13 +1,28 @@
 import DcsGroupCard from "./DcsGroupCard";
+import type { ConflictAnalysis } from "@/modules/duties/services/dutyConflictService";
 import type { DcsGroup, DcsGroupState } from "../types";
 
 interface DcsGroupListProps {
   groups: readonly DcsGroup[];
   stateOf: (group: DcsGroup) => DcsGroupState;
   onToggle: (group: DcsGroup) => void;
+  conflictFor?: (group: DcsGroup) => ConflictAnalysis;
+  /**
+   * Cross-schedule display ordinals so every card reads "Group #N" with a
+   * distinct number — backend `groupIndex` resets per schedule which made
+   * every card on the page say "Group 1". The map is built in the hook by
+   * `buildDcsGroupOrdinalMap` and keyed by `_id`.
+   */
+  ordinalMap?: ReadonlyMap<string, number>;
 }
 
-export default function DcsGroupList({ groups, stateOf, onToggle }: DcsGroupListProps) {
+export default function DcsGroupList({
+  groups,
+  stateOf,
+  onToggle,
+  conflictFor,
+  ordinalMap,
+}: DcsGroupListProps) {
   if (groups.length === 0) {
     return (
       <div className="rounded-xl border-2 border-dashed border-gray-200 py-12 text-center">
@@ -29,6 +44,8 @@ export default function DcsGroupList({ groups, stateOf, onToggle }: DcsGroupList
           group={g}
           state={stateOf(g)}
           onToggle={() => onToggle(g)}
+          conflict={conflictFor?.(g)}
+          displayOrdinal={ordinalMap?.get(g._id)}
         />
       ))}
     </div>

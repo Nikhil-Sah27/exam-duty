@@ -134,6 +134,28 @@ export interface SlotAllocation {
 /** Global map tracking which rooms are used per slot key (date_shiftIndex) */
 export type UsedRoomsMap = Record<string, string[]>;
 
+/**
+ * Reservation info returned by `/exam-groups/room-availability`. Represents
+ * a room already booked in an overlapping time window by *another* exam.
+ * Used to grey out the room in the picker and render the tooltip.
+ */
+export interface ReservationInfo {
+  examRoomId: string;
+  examGroupId: string;
+  examType: string;
+  semester: number;
+  departments: string[];
+  roomId: string;
+  roomNumber: string | null;
+  buildingName: string | null;
+  date: string;
+  startTime: string;
+  endTime: string;
+}
+
+/** slotKey (YYYY-MM-DD|startTime|endTime) → roomId → ReservationInfo */
+export type ReservedRoomsBySlot = Map<string, Map<string, ReservationInfo>>;
+
 /** @deprecated Use SlotAllocation instead */
 export interface SlotRoomAssignment {
   scheduleId: string;
