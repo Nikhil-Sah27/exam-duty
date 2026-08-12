@@ -16,38 +16,41 @@ dotenv.config({ path: path.join(__dirname, "..", ".env") });
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/exam-duty";
 const SALT_ROUNDS = 10;
 
+// Designations here follow the designation → roles rules enforced by the app
+// (backend/shared/utils/roleResolver.js). "Other" is the only designation that
+// permits CS.
 const seedUsers = [
   {
     name: "Admin",
     email: "admin@examduty.com",
     password: "Admin123",
-    role: "cs",
+    designation: "Other",
+    roles: ["cs"],
     department: "Administration",
-    designation: "System Administrator",
   },
   {
     name: "Deputy Admin",
     email: "dcs@examduty.com",
     password: "Dcs12345",
-    role: "dcs",
+    designation: "HOD/Dean",
+    roles: ["dcs"],
     department: "Administration",
-    designation: "Deputy Controller",
   },
   {
     name: "Resource Scheduler",
     email: "rs@examduty.com",
     password: "Rs123456",
-    role: "rs",
+    designation: "Professor",
+    roles: ["rs"],
     department: "Examination Cell",
-    designation: "Resource Coordinator",
   },
   {
     name: "Invigilator One",
     email: "invigilator@examduty.com",
     password: "Invig123",
-    role: "invigilator",
-    department: "Computer Science",
     designation: "Assistant Professor",
+    roles: ["rs", "invigilator"],
+    department: "Computer Science",
   },
 ];
 
@@ -76,7 +79,7 @@ async function seed() {
       email: user.email,
       password: hashedPassword,
       phone: null,
-      role: user.role,
+      roles: user.roles,
       department: user.department,
       designation: user.designation,
       isActive: true,
@@ -84,7 +87,7 @@ async function seed() {
       updatedAt: new Date(),
     });
 
-    console.log(`CREATED: ${user.email} (${user.role})`);
+    console.log(`CREATED: ${user.email} (${user.roles.join(", ")})`);
     created++;
   }
 

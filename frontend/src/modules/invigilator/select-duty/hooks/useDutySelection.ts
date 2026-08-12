@@ -22,7 +22,7 @@ const selectDutyApi = (slot: DutySlot) =>
 export function useDutySelection() {
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
-  const roleConfig = getRoleConfig(user?.role);
+  const roleConfig = getRoleConfig(user?.activeRole || undefined);
   const flagKey = roleConfig?.flagKey ?? "invigilatorAssigned";
 
   const slotsQuery = useAvailableDutySlots();

@@ -1,10 +1,33 @@
 const bcrypt = require("bcrypt");
 const AppError = require("../../shared/utils/AppError");
 const userRepository = require("./user.repository");
+const {
+  enforceRolesForDesignation,
+} = require("../../shared/utils/roleResolver");
 
 const SALT_ROUNDS = 10;
 
-const createUser = async ({ name, email, password, phone, role, department, designation }) => {
+const createUser = async ({
+  name,
+  email,
+  password,
+  phone,
+  roles,
+  role, // legacy single-value fallback from clients that haven't updated yet
+  department,
+  designation,
+}) => {
+  if (!designation) {
+    throw new AppError("Designation is required", 400);
+  }
+  const requestedRoles = Array.isArray(roles)
+    ? roles
+    : role
+    ? [role]
+    : undefined;
+
+  const finalRoles = enforceRolesForDesignation(designation, requestedRoles);
+
   const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
 
   return userRepository.create({
@@ -12,7 +35,7 @@ const createUser = async ({ name, email, password, phone, role, department, desi
     email,
     password: hashedPassword,
     phone,
-    role,
+    roles: finalRoles,
     department,
     designation,
   });
@@ -22,7 +45,7 @@ const getAllUsers = async (query) => {
   const filter = {};
 
   if (query.department) filter.department = query.department;
-  if (query.role) filter.role = query.role;
+  if (query.role) filter.roles = query.role; // matches any user whose roles array contains `role`
   if (query.isActive !== undefined) filter.isActive = query.isActive === "true";
 
   return userRepository.findAll(filter);
@@ -35,9 +58,23 @@ const getUserById = async (id) => {
 };
 
 const updateUser = async (id, data) => {
-  // Never allow password or role updates through this endpoint
+  // Never allow password updates through this endpoint.
   delete data.password;
-  delete data.role;
+
+  // If designation is being changed, re-resolve roles from it.
+  if (data.designation !== undefined) {
+    const requestedRoles = Array.isArray(data.roles)
+      ? data.roles
+      : data.role
+      ? [data.role]
+      : undefined;
+    data.roles = enforceRolesForDesignation(data.designation, requestedRoles);
+    delete data.role;
+  } else {
+    // Designation unchanged — do not allow direct role writes.
+    delete data.role;
+    delete data.roles;
+  }
 
   const user = await userRepository.updateById(id, data);
   if (!user) throw new AppError("User not found", 404);
@@ -62,10 +99,10 @@ const bootstrapAdmin = async () => {
     name: "Admin",
     email: "admin@examduty.com",
     password: hashedPassword,
-    role: "cs",
+    designation: "Other",
+    roles: ["cs"],
   });
 
-  // Re-fetch to apply ALLOWED_FIELDS projection (strips password)
   return userRepository.findById(user._id);
 };
 

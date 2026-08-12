@@ -12,8 +12,8 @@ import RSSidebar from "./RSSidebar";
 export default function RSLayout() {
   const user = useAuthStore((s) => s.user);
 
-  if (user && user.role !== "rs") {
-    const elsewhere = getRoleConfig(user.role);
+  if (user && user.activeRole !== "rs") {
+    const elsewhere = getRoleConfig(user.activeRole);
     return <Navigate to={elsewhere?.defaultPath || "/"} replace />;
   }
 

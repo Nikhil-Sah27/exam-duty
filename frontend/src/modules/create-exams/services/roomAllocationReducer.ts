@@ -7,6 +7,8 @@ import type {
   DepartmentData,
   Shift,
   SeatSharingPlanItem,
+  ShareableRoomMark,
+  GlobalSharedConsumption,
 } from "../types";
 import {
   getSlotKey,
@@ -87,6 +89,8 @@ export function buildSlotAllocations(
         assignedRooms: [],
         sharedSeatsReceived: [],
         sharedSeatsGiven: [],
+        shareableMark: null,
+        globalSharedReceived: [],
       });
     }
 
@@ -222,6 +226,98 @@ export function removeSharing(
       const sk = getSlotKey(slot.date, slot.shiftIndex);
       if (sk !== slotKey) return slot;
       return removeSeatSharingFromSlot(slot, targetDeptId, roomId);
+    }),
+  };
+}
+
+// ──────────────────────────────────────────────
+// Global Seat Sharing — reducer actions
+// ──────────────────────────────────────────────
+
+/**
+ * Owner side: mark exactly one of a dept's assigned rooms as globally
+ * shareable (or clear the mark by passing `null`).
+ */
+export function setShareableMark(
+  state: RoomAllocationState,
+  slotKey: string,
+  deptId: string,
+  mark: ShareableRoomMark | null
+): RoomAllocationState {
+  return {
+    ...state,
+    slotAllocations: state.slotAllocations.map((slot) => {
+      const sk = getSlotKey(slot.date, slot.shiftIndex);
+      if (sk !== slotKey) return slot;
+      return {
+        ...slot,
+        departments: slot.departments.map((dept) =>
+          dept.departmentId === deptId ? { ...dept, shareableMark: mark } : dept
+        ),
+      };
+    }),
+  };
+}
+
+/**
+ * Consumer side: append a borrowed-room allocation. Only one entry per
+ * (deptId, examRoomId) — a repeat borrow updates the existing entry.
+ */
+export function addGlobalShared(
+  state: RoomAllocationState,
+  slotKey: string,
+  deptId: string,
+  consumption: GlobalSharedConsumption
+): RoomAllocationState {
+  return {
+    ...state,
+    slotAllocations: state.slotAllocations.map((slot) => {
+      const sk = getSlotKey(slot.date, slot.shiftIndex);
+      if (sk !== slotKey) return slot;
+      return {
+        ...slot,
+        departments: slot.departments.map((dept) => {
+          if (dept.departmentId !== deptId) return dept;
+          const existingIdx = dept.globalSharedReceived.findIndex(
+            (c) => c.examRoomId === consumption.examRoomId
+          );
+          const next = [...dept.globalSharedReceived];
+          if (existingIdx >= 0) next[existingIdx] = consumption;
+          else next.push(consumption);
+          return { ...dept, globalSharedReceived: next };
+        }),
+      };
+    }),
+  };
+}
+
+/**
+ * Consumer side: drop a borrowed-room allocation.
+ */
+export function removeGlobalShared(
+  state: RoomAllocationState,
+  slotKey: string,
+  deptId: string,
+  examRoomId: string
+): RoomAllocationState {
+  return {
+    ...state,
+    slotAllocations: state.slotAllocations.map((slot) => {
+      const sk = getSlotKey(slot.date, slot.shiftIndex);
+      if (sk !== slotKey) return slot;
+      return {
+        ...slot,
+        departments: slot.departments.map((dept) =>
+          dept.departmentId === deptId
+            ? {
+                ...dept,
+                globalSharedReceived: dept.globalSharedReceived.filter(
+                  (c) => c.examRoomId !== examRoomId
+                ),
+              }
+            : dept
+        ),
+      };
     }),
   };
 }

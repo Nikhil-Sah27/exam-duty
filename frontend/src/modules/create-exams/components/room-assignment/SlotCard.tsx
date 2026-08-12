@@ -1,6 +1,15 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Calendar, Clock } from "lucide-react";
-import type { SlotAllocation, BuildingGrouped, RoomInfo, SeatSharingPlanItem, ReservationInfo } from "../../types";
+import type {
+  SlotAllocation,
+  BuildingGrouped,
+  RoomInfo,
+  SeatSharingPlanItem,
+  ReservationInfo,
+  ShareableRoomOption,
+  ShareableRoomMark,
+  GlobalSharedConsumption,
+} from "../../types";
 import { formatDate } from "../../utils/dateUtils";
 import { getSlotEffectiveSummary } from "../../selectors/allocationSelectors";
 import DepartmentAllocationCard from "./DepartmentAllocationCard";
@@ -12,11 +21,16 @@ interface SlotCardProps {
   disabledRoomIds: Set<string>;
   /** roomId → reservation info for rooms already booked by another exam. */
   reservedRoomInfo?: Map<string, ReservationInfo>;
+  /** Globally-shareable rooms whose owner schedule overlaps this slot. */
+  shareableOptions: ShareableRoomOption[];
   defaultExpanded?: boolean;
   onAddRoom: (deptId: string, room: RoomInfo) => void;
   onRemoveRoom: (deptId: string, roomId: string) => void;
   onApplySharing: (deptId: string, plan: SeatSharingPlanItem[]) => void;
   onRemoveSharing: (deptId: string, roomId: string) => void;
+  onSetShareableMark: (deptId: string, mark: ShareableRoomMark | null) => void;
+  onAddGlobalShared: (deptId: string, consumption: GlobalSharedConsumption) => void;
+  onRemoveGlobalShared: (deptId: string, examRoomId: string) => void;
 }
 
 export default function SlotCard({
@@ -25,11 +39,15 @@ export default function SlotCard({
   avgStudentsPerClass,
   disabledRoomIds,
   reservedRoomInfo,
+  shareableOptions,
   defaultExpanded = false,
   onAddRoom,
   onRemoveRoom,
   onApplySharing,
   onRemoveSharing,
+  onSetShareableMark,
+  onAddGlobalShared,
+  onRemoveGlobalShared,
 }: SlotCardProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
@@ -147,11 +165,19 @@ export default function SlotCard({
               avgStudentsPerClass={avgStudentsPerClass}
               disabledRoomIds={disabledRoomIds}
               reservedRoomInfo={reservedRoomInfo}
+              shareableOptions={shareableOptions}
               defaultExpanded={activeDepts[firstUncoveredIdx]?.departmentId === dept.departmentId}
               onAddRoom={(room) => onAddRoom(dept.departmentId, room)}
               onRemoveRoom={(roomId) => onRemoveRoom(dept.departmentId, roomId)}
               onApplySharing={(plan) => onApplySharing(dept.departmentId, plan)}
               onRemoveSharing={(roomId) => onRemoveSharing(dept.departmentId, roomId)}
+              onSetShareableMark={(mark) => onSetShareableMark(dept.departmentId, mark)}
+              onAddGlobalShared={(consumption) =>
+                onAddGlobalShared(dept.departmentId, consumption)
+              }
+              onRemoveGlobalShared={(examRoomId) =>
+                onRemoveGlobalShared(dept.departmentId, examRoomId)
+              }
             />
           ))}
         </div>

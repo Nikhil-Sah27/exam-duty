@@ -1,11 +1,9 @@
-import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useTeacherDetails, useTeacherDuties } from "../hooks";
 import { ChevronRight } from "lucide-react";
 import TeacherHeader from "./TeacherHeader";
 import DutyStatsBar from "./DutyStatsBar";
 import DutySection from "./DutySection";
-import AssignDutyModal from "./AssignDutyModal";
 
 export default function TeacherDetailsPage() {
   const { id } = useParams<{ id: string }>();
@@ -16,8 +14,6 @@ export default function TeacherDetailsPage() {
     error: tError,
   } = useTeacherDetails(id!);
   const { data: duties, isLoading: dutiesLoading } = useTeacherDuties(id!);
-
-  const [modalOpen, setModalOpen] = useState(false);
 
   if (teacherLoading || dutiesLoading) {
     return <p className="text-gray-500">Loading...</p>;
@@ -49,10 +45,7 @@ export default function TeacherDetailsPage() {
       </nav>
 
       {/* Header card */}
-      <TeacherHeader
-        teacher={teacher}
-        onAssignClick={() => setModalOpen(true)}
-      />
+      <TeacherHeader teacher={teacher} />
 
       {/* Stats bar */}
       <DutyStatsBar
@@ -71,13 +64,6 @@ export default function TeacherDetailsPage() {
         title="Completed Duties"
         variant="completed"
         duties={completed}
-      />
-
-      {/* Modal */}
-      <AssignDutyModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        teacher={teacher}
       />
     </div>
   );

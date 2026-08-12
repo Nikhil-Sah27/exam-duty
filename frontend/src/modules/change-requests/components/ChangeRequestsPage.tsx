@@ -13,7 +13,7 @@ const TABS: { value: ChangeRequestStatus; label: string }[] = [
 
 export default function ChangeRequestsPage() {
   const user = useAuthStore((s) => s.user);
-  const isCS = user?.role === "cs" || user?.role === "dcs";
+  const isCS = user?.activeRole === "cs" || user?.activeRole === "dcs";
 
   const [tab, setTab] = useState<ChangeRequestStatus>("pending");
   const { data: requests, isLoading, error } = useAllChangeRequests(tab);

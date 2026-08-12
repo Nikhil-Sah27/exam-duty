@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Pencil, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
 import { formatDate } from "@/shared/lib/utils";
-import { getRoleLabel, ROLE_BADGE_COLORS } from "@/shared/constants/roles";
+import RoleBadge from "@/shared/components/RoleBadge";
 import { useDeleteUser } from "../hooks";
 import { UserProfile } from "../types";
 import ConfirmModal from "./ConfirmModal";
@@ -65,13 +65,13 @@ export default function TeacherRow({ user }: TeacherRowProps) {
           </div>
         </td>
 
-        {/* Role */}
+        {/* Roles — one badge per assigned role */}
         <td className="px-5 py-3">
-          <span
-            className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${ROLE_BADGE_COLORS[user.role] || "bg-gray-100 text-gray-600"}`}
-          >
-            {getRoleLabel(user.role)}
-          </span>
+          <div className="flex flex-wrap gap-1">
+            {(user.roles || []).map((r) => (
+              <RoleBadge key={r} role={r} />
+            ))}
+          </div>
         </td>
 
         {/* Department */}

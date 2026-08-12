@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import ProtectedLayout from "@/shared/components/ProtectedLayout";
 import LoginForm from "@/modules/auth/components/LoginForm";
+import RoleSelectionPage from "@/modules/auth/components/RoleSelectionPage";
 import DashboardPage from "@/modules/dashboard/components/DashboardPage";
 import CreateExamsPage from "@/modules/create-exams/components/CreateExamsPage";
 import ExamsPage from "@/modules/exams/components/ExamsPage";
@@ -16,6 +17,8 @@ import ReportsPage from "@/modules/reports/components/ReportsPage";
 import AuditPage from "@/modules/audit/components/AuditPage";
 import ManageDutiesPage from "@/modules/manage-duties/components/ManageDutiesPage";
 import TeacherDetailsPage from "@/modules/manage-duties/components/TeacherDetailsPage";
+import AssignDutyExamsPage from "@/modules/manage-duties/components/AssignDutyExamsPage";
+import AssignDutyExamDetailsPage from "@/modules/manage-duties/components/AssignDutyExamDetailsPage";
 import { invigilatorRoutes } from "@/modules/invigilator/routes/invigilatorRoutes";
 import { rsRoutes } from "@/modules/rs/routes/rsRoutes";
 import { dcsRoutes } from "@/modules/dcs/routes/dcsRoutes";
@@ -24,6 +27,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginForm />} />
+      <Route path="/select-role" element={<RoleSelectionPage />} />
       <Route element={<ProtectedLayout />}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/create-exams" element={<CreateExamsPage />} />
@@ -34,6 +38,14 @@ export default function App() {
         <Route path="/requests" element={<ChangeRequestsPage />} />
         <Route path="/manage-duties" element={<ManageDutiesPage />} />
         <Route path="/manage-duties/:id" element={<TeacherDetailsPage />} />
+        <Route
+          path="/manage-duties/:id/assign"
+          element={<AssignDutyExamsPage />}
+        />
+        <Route
+          path="/manage-duties/:id/assign/exams/:examId"
+          element={<AssignDutyExamDetailsPage />}
+        />
         <Route path="/departments" element={<DepartmentsPage />} />
         <Route path="/departments/:id" element={<DepartmentDetailsPage />} />
         <Route path="/infrastructure" element={<InfrastructurePage />} />

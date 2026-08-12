@@ -2,13 +2,21 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import Button from "@/shared/components/Button";
 import type { DepartmentData, RoutineEntry, Shift } from "../../types";
 import { formatDate } from "../../utils/dateUtils";
-import { isCourseAssigned } from "../../selectors/routineSelectors";
+import {
+  getSameCodeSlotConflicts,
+  getConflictingAssignmentKeys,
+} from "../../selectors/routineSelectors";
+import {
+  buildRoutineOptions,
+  isTokenUsedInRoutine,
+} from "../../utils/routineOptionUtils";
+import SameCodeConflictBanner from "../routine/SameCodeConflictBanner";
 
 interface RoutineStepProps {
   routine: RoutineEntry[];
   departmentsData: DepartmentData[];
   shifts: Shift[];
-  onUpdateAssignment: (entryIndex: number, departmentId: string, courseId: string) => void;
+  onUpdateAssignment: (entryIndex: number, departmentId: string, token: string) => void;
   onNext: () => void;
   onPrev: () => void;
 }
@@ -21,8 +29,12 @@ export default function RoutineStep({
   onNext,
   onPrev,
 }: RoutineStepProps) {
+  const conflicts = getSameCodeSlotConflicts(routine, departmentsData);
+  const flaggedCells = getConflictingAssignmentKeys(routine, departmentsData);
+
   return (
     <div className="space-y-6">
+      <SameCodeConflictBanner conflicts={conflicts} shifts={shifts} />
       <section className="rounded-xl border border-gray-100 bg-white shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -58,28 +70,46 @@ export default function RoutineStep({
                       </span>
                     </td>
                     {departmentsData.map((dept) => {
-                      const selectedCourseId = entry.assignments[dept._id] || "";
+                      const selectedToken = entry.assignments[dept._id] || "";
+                      const options = buildRoutineOptions(dept);
+                      const isFlagged =
+                        !!selectedToken &&
+                        flaggedCells.has(`${dept._id}::${selectedToken}`);
                       return (
                         <td key={dept._id} className="px-4 py-2.5">
                           <select
-                            value={selectedCourseId}
+                            value={selectedToken}
                             onChange={(e) =>
                               onUpdateAssignment(entryIndex, dept._id, e.target.value)
                             }
-                            className="w-full min-w-[140px] rounded border border-gray-200 px-2 py-1.5 text-xs text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            title={
+                              isFlagged
+                                ? "Another department has a course with the same code on a different date/shift"
+                                : undefined
+                            }
+                            className={`w-full min-w-[160px] rounded border px-2 py-1.5 text-xs focus:outline-none focus:ring-1 ${
+                              isFlagged
+                                ? "border-amber-400 bg-amber-50 text-amber-900 focus:border-amber-500 focus:ring-amber-400"
+                                : "border-gray-200 text-gray-700 focus:border-blue-500 focus:ring-blue-500"
+                            }`}
                           >
                             <option value="">— Select —</option>
-                            {dept.courses.map((course) => {
+                            {options.map((opt) => {
                               const alreadyUsed =
-                                selectedCourseId !== course._id &&
-                                isCourseAssigned(routine, dept._id, course._id);
+                                selectedToken !== opt.token &&
+                                isTokenUsedInRoutine(routine, dept._id, opt.token);
+                              const groupSuffix =
+                                opt.kind === "group"
+                                  ? ` (${opt.memberCourseIds.length} subject${opt.memberCourseIds.length !== 1 ? "s" : ""})`
+                                  : "";
                               return (
                                 <option
-                                  key={course._id}
-                                  value={course._id}
+                                  key={opt.token}
+                                  value={opt.token}
                                   disabled={alreadyUsed}
                                 >
-                                  {course.code} — {course.name}
+                                  {opt.label}
+                                  {groupSuffix}
                                   {alreadyUsed ? " (used)" : ""}
                                 </option>
                               );

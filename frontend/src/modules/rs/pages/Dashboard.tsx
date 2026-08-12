@@ -4,14 +4,15 @@ import { useDutiesByTeacher } from "@/modules/shared/exams/hooks/useSharedExamDa
 import DashboardHero from "@/modules/shared/dashboard/components/DashboardHero";
 import DashboardDutySection from "@/modules/shared/dashboard/components/DashboardDutySection";
 import {
-  normalizeDutiesCompleted,
-  normalizeDutiesUpcoming,
+  normalizeRsGroupsCompleted,
+  normalizeRsGroupsUpcoming,
 } from "@/modules/shared/dashboard/utils/dashboardNormalizers";
 
 /**
  * RS dashboard. Same layout contract as the DCS / Invigilator dashboards —
  * hero band + upcoming + completed sections — but coloured for the RS
- * (Room Superintendent) role.
+ * (Room Superintendent) role. RS is a *group* role: cards represent whole
+ * room groups (up to 5 rooms per schedule + building), never individual rooms.
  */
 export default function Dashboard() {
   const user = useAuthStore((s) => s.user);
@@ -19,14 +20,15 @@ export default function Dashboard() {
   const duties = dutiesQuery.data ?? [];
 
   const upcoming = useMemo(
-    () => normalizeDutiesUpcoming({ duties, roleLabel: "RS" }),
+    () => normalizeRsGroupsUpcoming({ duties }),
     [duties],
   );
   const completed = useMemo(
-    () => normalizeDutiesCompleted({ duties, roleLabel: "RS" }),
+    () => normalizeRsGroupsCompleted({ duties }),
     [duties],
   );
 
+  const totalRooms = upcoming.reduce((sum, g) => sum + g.rooms.length, 0);
   const buildings = new Set(
     upcoming.flatMap((u) => u.rooms.map((r) => r.building).filter(Boolean) as string[]),
   );
@@ -39,8 +41,8 @@ export default function Dashboard() {
         subtitle="Your room-batch overview — supervision groups you're holding and a log of completed shifts."
         gradient="from-amber-500 via-orange-500 to-rose-500"
         stats={[
-          { label: "Upcoming", value: upcoming.length },
-          { label: "Rooms", value: upcoming.length },
+          { label: "Groups", value: upcoming.length },
+          { label: "Rooms", value: totalRooms },
           { label: "Buildings", value: buildings.size },
         ]}
         primaryAction={{ label: "Select Duty", href: "/rs/select-duty" }}

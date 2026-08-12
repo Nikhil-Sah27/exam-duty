@@ -28,7 +28,11 @@ export const useCreateBuilding = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: CreateBuildingPayload) => createBuilding(data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: BUILDINGS_KEY }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: BUILDINGS_KEY });
+      // Buildings/rooms change avg capacity → recompute duty targets.
+      qc.invalidateQueries({ queryKey: ["duty-calculation"] });
+    },
   });
 };
 
@@ -36,7 +40,11 @@ export const useDeleteBuilding = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => deleteBuilding(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: BUILDINGS_KEY }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: BUILDINGS_KEY });
+      // Buildings/rooms change avg capacity → recompute duty targets.
+      qc.invalidateQueries({ queryKey: ["duty-calculation"] });
+    },
   });
 };
 
@@ -56,6 +64,7 @@ export const useCreateRoom = (buildingId: string) => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: roomsKey(buildingId) });
       qc.invalidateQueries({ queryKey: BUILDINGS_KEY });
+      qc.invalidateQueries({ queryKey: ["duty-calculation"] });
     },
   });
 };
@@ -67,6 +76,7 @@ export const useCreateRoomsBulk = (buildingId: string) => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: roomsKey(buildingId) });
       qc.invalidateQueries({ queryKey: BUILDINGS_KEY });
+      qc.invalidateQueries({ queryKey: ["duty-calculation"] });
     },
   });
 };
@@ -78,6 +88,7 @@ export const useUpdateRoom = (buildingId: string) => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: roomsKey(buildingId) });
       qc.invalidateQueries({ queryKey: BUILDINGS_KEY });
+      qc.invalidateQueries({ queryKey: ["duty-calculation"] });
     },
   });
 };
@@ -89,6 +100,7 @@ export const useDeleteRoom = (buildingId: string) => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: roomsKey(buildingId) });
       qc.invalidateQueries({ queryKey: BUILDINGS_KEY });
+      qc.invalidateQueries({ queryKey: ["duty-calculation"] });
     },
   });
 };

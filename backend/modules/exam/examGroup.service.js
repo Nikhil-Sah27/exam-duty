@@ -7,6 +7,7 @@ const examDeletionService = require("../exam-cleanup/services/examDeletionServic
 const ExamGroup = require("./examGroup.model");
 const Duty = require("../duty/duty.model");
 const CIEPlanEntry = require("../create-exams/ciePlan.model");
+const SharedSeatAllocation = require("../seat-sharing/sharedSeatAllocation.model");
 
 const createGroup = async (data, userId) => {
   if (new Date(data.endDate) <= new Date(data.startDate)) {
@@ -92,22 +93,97 @@ const getGroupDetails = async (id) => {
   // round trip. The department ref is kept as a code via populate to match
   // the (string) codes already stored on ExamRoom.departments.
   const planEntries = await CIEPlanEntry.find({ examGroup: id })
-    .populate({ path: "course", select: "code name credits courseType" })
+    .populate({
+      path: "course",
+      select: "code name credits courseType electiveGroup",
+      populate: { path: "electiveGroup", select: "name type" },
+    })
     .populate({ path: "department", select: "code name" });
 
-  const coursesBySchedule = new Map();
-  for (const entry of planEntries) {
-    const key = entry.schedule.toString();
-    if (!coursesBySchedule.has(key)) coursesBySchedule.set(key, []);
-    coursesBySchedule.get(key).push({
+  const toScheduleCourse = (entry) => {
+    const eg = entry.course?.electiveGroup;
+    return {
       courseId: entry.course?._id,
       courseCode: entry.course?.code || null,
       courseTitle: entry.course?.name || null,
       credits: entry.course?.credits || null,
       courseType: entry.course?.courseType || null,
+      electiveGroupId: eg?._id || null,
+      electiveGroupName: eg?.name || null,
+      electiveGroupType: eg?.type || null,
       departmentCode: entry.department?.code || null,
       departmentName: entry.department?.name || null,
-    });
+    };
+  };
+
+  const coursesBySchedule = new Map();
+  for (const entry of planEntries) {
+    const key = entry.schedule.toString();
+    if (!coursesBySchedule.has(key)) coursesBySchedule.set(key, []);
+    coursesBySchedule.get(key).push(toScheduleCourse(entry));
+  }
+
+  // Cross-group seat-sharing consumers: a dept from a DIFFERENT exam group
+  // may be sitting in one of our rooms via SharedSeatAllocation. Their course
+  // lives on their own group's schedule, so we resolve it here and merge it
+  // into the source room's schedule course list. Downstream `forDepartments`
+  // filters (applied per-room by the frontend) then surface the borrowed
+  // course only in the room where the borrow actually happens.
+  if (allRooms.length > 0) {
+    const sourceRoomIds = allRooms.map((r) => r._id);
+    const roomToScheduleKey = new Map(
+      allRooms.map((r) => [String(r._id), String(r.schedule)])
+    );
+    const allocs = await SharedSeatAllocation.find({
+      sourceExamRoom: { $in: sourceRoomIds },
+    }).lean();
+
+    if (allocs.length > 0) {
+      const consumerScheduleIds = [
+        ...new Set(allocs.map((a) => String(a.consumerSchedule))),
+      ];
+      const consumerEntries = await CIEPlanEntry.find({
+        schedule: { $in: consumerScheduleIds },
+      })
+        .populate({
+          path: "course",
+          select: "code name credits courseType electiveGroup",
+          populate: { path: "electiveGroup", select: "name type" },
+        })
+        .populate({ path: "department", select: "code name" });
+
+      const consumerByKey = new Map();
+      for (const e of consumerEntries) {
+        const key = `${String(e.schedule)}|${(e.department?.code || "").toUpperCase()}`;
+        const list = consumerByKey.get(key) || [];
+        list.push(toScheduleCourse(e));
+        consumerByKey.set(key, list);
+      }
+
+      for (const alloc of allocs) {
+        const sourceScheduleKey = roomToScheduleKey.get(String(alloc.sourceExamRoom));
+        if (!sourceScheduleKey) continue;
+        const deptCode = (alloc.consumerDepartmentCode || "").toUpperCase();
+        const lookupKey = `${String(alloc.consumerSchedule)}|${deptCode}`;
+        const consumerCourses = consumerByKey.get(lookupKey) || [];
+        if (consumerCourses.length === 0) continue;
+
+        const bucket = coursesBySchedule.get(sourceScheduleKey) || [];
+        const existingKeys = new Set(
+          bucket.map(
+            (c) =>
+              `${(c.departmentCode || "").toUpperCase()}|${c.courseId || c.courseCode || ""}`
+          )
+        );
+        for (const c of consumerCourses) {
+          const key = `${(c.departmentCode || "").toUpperCase()}|${c.courseId || c.courseCode || ""}`;
+          if (existingKeys.has(key)) continue;
+          bucket.push(c);
+          existingKeys.add(key);
+        }
+        coursesBySchedule.set(sourceScheduleKey, bucket);
+      }
+    }
   }
 
   // Map rooms to their schedule
@@ -158,7 +234,10 @@ const getDutyStatus = async (id) => {
       continue;
     }
 
-    // Match duties by date + time range + room number (stored as string in duty.room)
+    // Match duties by the physical Room _id (building-scoped). The legacy
+    // string `room` field is not building-aware and would produce false
+    // positives when the same room number exists in a different block.
+    const roomRef = examRoom.room?._id || null;
     const roomNumber = examRoom.room?.roomNumber || "";
     const roomId = examRoom.room?._id?.toString() || "";
 
@@ -167,26 +246,43 @@ const getDutyStatus = async (id) => {
     const nextDay = new Date(scheduleDate);
     nextDay.setDate(nextDay.getDate() + 1);
 
-    const duties = await Duty.find({
+    const dutyFilter = {
       date: { $gte: scheduleDate, $lt: nextDay },
       startTime: schedule.startTime,
       endTime: schedule.endTime,
       status: "assigned",
-      $or: [
+    };
+    if (roomRef) {
+      // Primary path: roomRef matches (post-backfill duties, all new duties).
+      // Also include legacy duties that predate roomRef by falling back to the
+      // string room label — but only when roomRef is null, so we can't falsely
+      // absorb a different-building duty that already has its own roomRef set.
+      dutyFilter.$or = [
+        { roomRef },
+        {
+          roomRef: null,
+          $or: [
+            { room: roomNumber },
+            { room: roomId },
+            { room: { $regex: new RegExp(`\\b${roomNumber}\\b`) } },
+          ],
+        },
+      ];
+    } else {
+      dutyFilter.$or = [
         { room: roomNumber },
         { room: roomId },
         { room: { $regex: new RegExp(`\\b${roomNumber}\\b`) } },
-      ],
-    }).populate("teacher", "name email phone role department designation");
+      ];
+    }
+    const duties = await Duty.find(dutyFilter).populate("teacher", "name email phone roles department designation");
 
-    // Populate per-role assignee info so the teacher-side modal can show the
-    // owner's name, department, contact, etc. CS callers only read the boolean
-    // flags below — the additional fields are additive and ignored there.
-    const dcsTeacher = duties.find((d) => d.teacher?.role === "dcs")?.teacher;
-    const rsTeacher = duties.find((d) => d.teacher?.role === "rs")?.teacher;
-    const invigilatorTeacher = duties.find(
-      (d) => d.teacher?.role === "invigilator",
-    )?.teacher;
+    // Split by the DUTY's role field — this identifies the exact slot the duty
+    // was claimed for, which is unambiguous even when a teacher holds multiple
+    // roles (e.g. Associate Professor with roles=[rs, invigilator]).
+    const dcsTeacher = duties.find((d) => d.role === "dcs")?.teacher;
+    const rsTeacher = duties.find((d) => d.role === "rs")?.teacher;
+    const invigilatorTeacher = duties.find((d) => d.role === "invigilator")?.teacher;
 
     const toPublic = (u) =>
       u
@@ -195,7 +291,7 @@ const getDutyStatus = async (id) => {
             name: u.name,
             email: u.email,
             phone: u.phone || null,
-            role: u.role,
+            roles: u.roles || [],
             department: u.department || null,
             designation: u.designation || null,
           }

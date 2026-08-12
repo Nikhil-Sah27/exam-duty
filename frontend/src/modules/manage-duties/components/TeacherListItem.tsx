@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { TeacherWithStats } from "../types";
 import { ChevronRight } from "lucide-react";
-import { getRoleLabel, ROLE_BADGE_COLORS } from "@/shared/constants/roles";
+import RoleBadge from "@/shared/components/RoleBadge";
 
 interface TeacherListItemProps {
   teacher: TeacherWithStats;
@@ -36,12 +36,12 @@ export default function TeacherListItem({ teacher }: TeacherListItemProps) {
         )}
       </div>
 
-      {/* Role badge */}
-      <span
-        className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${ROLE_BADGE_COLORS[teacher.role] || "bg-gray-100 text-gray-600"}`}
-      >
-        {getRoleLabel(teacher.role)}
-      </span>
+      {/* Role badges — one per assigned role */}
+      <div className="flex shrink-0 flex-wrap gap-1">
+        {(teacher.roles || []).map((r) => (
+          <RoleBadge key={r} role={r} />
+        ))}
+      </div>
 
       {/* Stats */}
       <div className="hidden shrink-0 items-center gap-5 sm:flex">

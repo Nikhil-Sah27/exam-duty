@@ -7,6 +7,9 @@ import type {
   RoomInfo,
   SeatSharingPlanItem,
   ReservationInfo,
+  ShareableRoomOption,
+  ShareableRoomMark,
+  GlobalSharedConsumption,
 } from "../../types";
 import { getUnusedSeatsInSlot } from "../../services/seatSharing";
 import { getDeptDisplayStats } from "../../selectors/allocationSelectors";
@@ -15,6 +18,11 @@ import RoomSelector from "./RoomSelector";
 import SharedRoomIndicator from "../room-sharing/SharedRoomIndicator";
 import SeatSuggestionBanner from "../room-sharing/SeatSuggestionBanner";
 import SeatSharingModal from "../room-sharing/SeatSharingModal";
+import MakeSharableBanner from "../room-sharing/MakeSharableBanner";
+import MakeSharableModal from "../room-sharing/MakeSharableModal";
+import UseSharedSeatsBanner from "../room-sharing/UseSharedSeatsBanner";
+import UseSharedSeatsModal from "../room-sharing/UseSharedSeatsModal";
+import GlobalSharedReceivedList from "../room-sharing/GlobalSharedReceivedList";
 
 interface DepartmentAllocationCardProps {
   allocation: DepartmentAllocation;
@@ -23,11 +31,15 @@ interface DepartmentAllocationCardProps {
   avgStudentsPerClass: number;
   disabledRoomIds: Set<string>;
   reservedRoomInfo?: Map<string, ReservationInfo>;
+  shareableOptions: ShareableRoomOption[];
   defaultExpanded?: boolean;
   onAddRoom: (room: RoomInfo) => void;
   onRemoveRoom: (roomId: string) => void;
   onApplySharing: (plan: SeatSharingPlanItem[]) => void;
   onRemoveSharing: (roomId: string) => void;
+  onSetShareableMark: (mark: ShareableRoomMark | null) => void;
+  onAddGlobalShared: (consumption: GlobalSharedConsumption) => void;
+  onRemoveGlobalShared: (examRoomId: string) => void;
 }
 
 export default function DepartmentAllocationCard({
@@ -37,14 +49,20 @@ export default function DepartmentAllocationCard({
   avgStudentsPerClass,
   disabledRoomIds,
   reservedRoomInfo,
+  shareableOptions,
   defaultExpanded = false,
   onAddRoom,
   onRemoveRoom,
   onApplySharing,
   onRemoveSharing,
+  onSetShareableMark,
+  onAddGlobalShared,
+  onRemoveGlobalShared,
 }: DepartmentAllocationCardProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [sharingModalOpen, setSharingModalOpen] = useState(false);
+  const [makeSharableOpen, setMakeSharableOpen] = useState(false);
+  const [useSharedOpen, setUseSharedOpen] = useState(false);
 
   const { students, assignedRooms, departmentCode, courseName, courseId } = allocation;
 
@@ -64,9 +82,14 @@ export default function DepartmentAllocationCard({
   const stats = getDeptDisplayStats(allocation, avgStudentsPerClass);
   const {
     ownCapacity, effectiveCapacity, effectiveRemaining,
-    sharedReceived, extra, capacityMet, needed,
+    sharedReceived, globalSharedReceived: globalSharedReceivedCount,
+    extra, shareableExtra, capacityMet, needed,
     progressPct, ownPct,
   } = stats;
+  // The progress bar and header badges should treat intra-batch and cross-
+  // group shared seats identically — both are borrowed capacity from another
+  // dept and should render as the orange segment.
+  const totalSharedReceived = sharedReceived + globalSharedReceivedCount;
   const assignedRoomIds = assignedRooms.map((r) => r._id);
 
   // Presentation mappings (data → CSS classes)
@@ -74,7 +97,7 @@ export default function DepartmentAllocationCard({
 
   const borderColor = capacityMet
     ? "border-green-200"
-    : assignedRooms.length > 0 || sharedReceived > 0
+    : assignedRooms.length > 0 || totalSharedReceived > 0
       ? "border-amber-200"
       : "border-gray-200";
 
@@ -103,9 +126,9 @@ export default function DepartmentAllocationCard({
                   {departmentCode}
                 </span>
                 <span className="truncate text-sm text-gray-500">{courseName}</span>
-                {sharedReceived > 0 && (
+                {totalSharedReceived > 0 && (
                   <span className="rounded-full border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[10px] font-semibold text-orange-600">
-                    +{sharedReceived} shared
+                    +{totalSharedReceived} shared
                   </span>
                 )}
               </div>
@@ -130,8 +153,8 @@ export default function DepartmentAllocationCard({
                     className={`h-full transition-all duration-300 ${progressColor}`}
                     style={{ width: `${ownPct}%` }}
                   />
-                  {/* Shared seats segment */}
-                  {sharedReceived > 0 && (
+                  {/* Shared seats segment (intra-batch + cross-group) */}
+                  {totalSharedReceived > 0 && (
                     <div
                       className="h-full bg-orange-400 transition-all duration-300"
                       style={{ width: `${progressPct - ownPct}%` }}
@@ -229,17 +252,26 @@ export default function DepartmentAllocationCard({
                   </p>
                 </div>
               )}
-              {extra > 0 && (
-                <div className="flex items-center gap-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
-                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-                  <p className="text-xs font-medium text-amber-600">
-                    {extra} extra seats unused
-                  </p>
-                </div>
+              {(shareableExtra > 0 || allocation.shareableMark) && (
+                <MakeSharableBanner
+                  extraSeats={shareableExtra}
+                  assignedRooms={assignedRooms}
+                  mark={allocation.shareableMark}
+                  onOpenModal={() => setMakeSharableOpen(true)}
+                  onUnmark={() => onSetShareableMark(null)}
+                />
               )}
             </div>
 
-            {/* === Seat Sharing Suggestion === */}
+            {/* === Global Shared Seats Received === */}
+            {allocation.globalSharedReceived.length > 0 && (
+              <GlobalSharedReceivedList
+                consumptions={allocation.globalSharedReceived}
+                onRemove={onRemoveGlobalShared}
+              />
+            )}
+
+            {/* === Intra-batch Seat Sharing Suggestion === */}
             {!capacityMet && effectiveRemaining > 0 && unusedSeats.length > 0 && (
               <SeatSuggestionBanner
                 unusedSeats={unusedSeats}
@@ -248,13 +280,22 @@ export default function DepartmentAllocationCard({
               />
             )}
 
+            {/* === Global Seat Sharing (cross-exam-group) Suggestion === */}
+            {!capacityMet && effectiveRemaining > 0 && shareableOptions.length > 0 && (
+              <UseSharedSeatsBanner
+                options={shareableOptions}
+                remainingStudents={effectiveRemaining}
+                onOpenModal={() => setUseSharedOpen(true)}
+              />
+            )}
+
             {/* === Capacity bar === */}
             <div>
               <div className="mb-1 flex items-center justify-between text-[11px] text-gray-400">
                 <span>
                   {effectiveCapacity} / {students} seats filled
-                  {sharedReceived > 0 && (
-                    <span className="text-orange-500"> (incl. {sharedReceived} shared)</span>
+                  {totalSharedReceived > 0 && (
+                    <span className="text-orange-500"> (incl. {totalSharedReceived} shared)</span>
                   )}
                 </span>
                 <span>{progressPct}%</span>
@@ -265,7 +306,7 @@ export default function DepartmentAllocationCard({
                     className={`h-full transition-all duration-500 ease-out ${progressColor}`}
                     style={{ width: `${ownPct}%` }}
                   />
-                  {sharedReceived > 0 && (
+                  {totalSharedReceived > 0 && (
                     <div
                       className="h-full bg-orange-400 transition-all duration-500 ease-out"
                       style={{ width: `${progressPct - ownPct}%` }}
@@ -273,7 +314,7 @@ export default function DepartmentAllocationCard({
                   )}
                 </div>
               </div>
-              {sharedReceived > 0 && (
+              {totalSharedReceived > 0 && (
                 <div className="mt-1 flex items-center gap-3 text-[10px]">
                   <span className="flex items-center gap-1">
                     <span className={`inline-block h-2 w-2 rounded-full ${progressColor}`} />
@@ -311,7 +352,7 @@ export default function DepartmentAllocationCard({
         )}
       </div>
 
-      {/* Seat Sharing Modal */}
+      {/* Intra-batch Seat Sharing Modal */}
       <SeatSharingModal
         open={sharingModalOpen}
         onClose={() => setSharingModalOpen(false)}
@@ -319,6 +360,27 @@ export default function DepartmentAllocationCard({
         remainingStudents={Math.max(0, effectiveRemaining)}
         unusedSeats={unusedSeats}
         onConfirm={onApplySharing}
+      />
+
+      {/* Global Seat Sharing — owner side */}
+      <MakeSharableModal
+        open={makeSharableOpen}
+        onClose={() => setMakeSharableOpen(false)}
+        departmentCode={departmentCode}
+        assignedRooms={assignedRooms}
+        extraSeats={shareableExtra}
+        currentMark={allocation.shareableMark}
+        onConfirm={onSetShareableMark}
+      />
+
+      {/* Global Seat Sharing — consumer side */}
+      <UseSharedSeatsModal
+        open={useSharedOpen}
+        onClose={() => setUseSharedOpen(false)}
+        options={shareableOptions}
+        existingConsumptions={allocation.globalSharedReceived}
+        remainingStudents={Math.max(0, effectiveRemaining)}
+        onConfirm={onAddGlobalShared}
       />
     </>
   );

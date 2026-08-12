@@ -1,9 +1,12 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { ArrowLeftRight, ChevronDown, LogOut } from "lucide-react";
 import { useAppStore } from "@/shared/store/app.store";
 import { useAuthStore } from "@/shared/store/auth.store";
 import { useUnreadCount } from "@/modules/notifications/hooks";
 import NotificationList from "@/modules/notifications/components/NotificationList";
+import RoleSelectionModal from "@/modules/auth/components/RoleSelectionModal";
+import { ROLE_LABELS } from "@/shared/constants/roles";
 
 export default function Navbar() {
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
@@ -11,18 +14,21 @@ export default function Navbar() {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
 
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [switchRoleOpen, setSwitchRoleOpen] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
 
   const { data: unreadCount } = useUnreadCount();
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node)
-      ) {
-        setDropdownOpen(false);
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setNotifOpen(false);
+      }
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClick);
@@ -33,6 +39,8 @@ export default function Navbar() {
     logout();
     navigate("/login", { replace: true });
   };
+
+  const hasMultipleRoles = (user?.roles?.length || 0) > 1;
 
   return (
     <header className="fixed left-0 top-0 z-10 flex h-16 w-full items-center justify-between bg-gray-800 px-6 text-white shadow-md">
@@ -61,9 +69,9 @@ export default function Navbar() {
       </div>
 
       <div className="flex items-center gap-4">
-        <div ref={dropdownRef} className="relative">
+        <div ref={notifRef} className="relative">
           <button
-            onClick={() => setDropdownOpen((prev) => !prev)}
+            onClick={() => setNotifOpen((prev) => !prev)}
             className="relative rounded p-1 hover:bg-gray-700"
             aria-label="Notifications"
           >
@@ -88,7 +96,7 @@ export default function Navbar() {
             )}
           </button>
 
-          {dropdownOpen && (
+          {notifOpen && (
             <div className="absolute right-0 top-full mt-2">
               <NotificationList />
             </div>
@@ -96,15 +104,51 @@ export default function Navbar() {
         </div>
 
         {user && (
-          <span className="text-sm text-gray-300">{user.name}</span>
+          <div ref={profileRef} className="relative">
+            <button
+              onClick={() => setProfileOpen((prev) => !prev)}
+              className="flex items-center gap-2 rounded px-3 py-1.5 text-sm text-gray-200 hover:bg-gray-700"
+            >
+              <span>{user.name}</span>
+              {user.activeRole && (
+                <span className="rounded bg-gray-700 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                  {ROLE_LABELS[user.activeRole]}
+                </span>
+              )}
+              <ChevronDown className="h-4 w-4" />
+            </button>
+
+            {profileOpen && (
+              <div className="absolute right-0 top-full mt-2 w-56 rounded-md border border-gray-700 bg-gray-800 py-1 text-sm shadow-lg">
+                {hasMultipleRoles && (
+                  <button
+                    onClick={() => {
+                      setProfileOpen(false);
+                      setSwitchRoleOpen(true);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-gray-200 hover:bg-gray-700"
+                  >
+                    <ArrowLeftRight className="h-4 w-4" />
+                    Switch Role
+                  </button>
+                )}
+                <button
+                  onClick={handleLogout}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-gray-200 hover:bg-gray-700"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Logout
+                </button>
+              </div>
+            )}
+          </div>
         )}
-        <button
-          onClick={handleLogout}
-          className="rounded px-3 py-1 text-sm text-gray-300 hover:bg-gray-700 hover:text-white"
-        >
-          Logout
-        </button>
       </div>
+
+      <RoleSelectionModal
+        open={switchRoleOpen}
+        onClose={() => setSwitchRoleOpen(false)}
+      />
     </header>
   );
 }

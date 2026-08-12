@@ -5,7 +5,7 @@ export interface UserProfile {
   name: string;
   email: string;
   phone: string | null;
-  role: UserRole;
+  roles: UserRole[];
   department: string | null;
   designation: string | null;
   isActive: boolean;
@@ -17,10 +17,13 @@ export interface CreateUserRequest {
   name: string;
   email: string;
   password: string;
-  phone?: string;
-  role: UserRole;
+  phone: string;
+  designation: string;
+  // The user picks a single role when designation === "Other". For
+  // rule-driven designations, roles is inferred server-side and this
+  // field can be omitted.
+  roles?: UserRole[];
   department?: string;
-  designation?: string;
 }
 
 export interface UpdateUserRequest {
@@ -29,6 +32,7 @@ export interface UpdateUserRequest {
   phone?: string;
   department?: string;
   designation?: string;
+  roles?: UserRole[];
 }
 
 export interface UserListResponse {

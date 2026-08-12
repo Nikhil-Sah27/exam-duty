@@ -19,6 +19,8 @@ export const useCreateUser = () => {
     mutationFn: (data: CreateUserRequest) => createUser(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: USERS_KEY });
+      // Teacher CRUD shifts the eligible-teacher pool → recompute duty targets.
+      queryClient.invalidateQueries({ queryKey: ["duty-calculation"] });
     },
   });
 };
@@ -31,6 +33,8 @@ export const useUpdateUser = () => {
       updateUser(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: USERS_KEY });
+      // Teacher CRUD shifts the eligible-teacher pool → recompute duty targets.
+      queryClient.invalidateQueries({ queryKey: ["duty-calculation"] });
     },
   });
 };
@@ -42,6 +46,8 @@ export const useDeleteUser = () => {
     mutationFn: (id: string) => deleteUser(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: USERS_KEY });
+      // Teacher CRUD shifts the eligible-teacher pool → recompute duty targets.
+      queryClient.invalidateQueries({ queryKey: ["duty-calculation"] });
     },
   });
 };

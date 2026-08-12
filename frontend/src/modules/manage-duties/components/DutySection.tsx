@@ -9,6 +9,40 @@ interface DutySectionProps {
   duties: TeacherDuty[];
 }
 
+/**
+ * Duty rows need an exam label + subtitle regardless of which creation flow
+ * produced them. Legacy duties carry a populated `exam` document; new duties
+ * (visual CS assign flow, invigilator self-assign, etc.) carry `examSchedule
+ * + examRoom` refs instead. Reading `d.exam.name` directly on a new-flow
+ * duty crashes the whole page — this helper is what makes the row survive.
+ */
+function getExamLabel(d: TeacherDuty): { title: string; subtitle: string } {
+  if (d.exam) {
+    return {
+      title: d.exam.name,
+      subtitle: `${d.exam.department} — Sem ${d.exam.semester}`,
+    };
+  }
+  const group = d.examSchedule?.examGroup;
+  const depts = d.examRoom?.departments ?? [];
+  const title = group ? `${group.examType} — Sem ${group.semester}` : "Exam";
+  const subtitle = depts.length > 0 ? depts.join(", ") : "—";
+  return { title, subtitle };
+}
+
+/**
+ * Room labels also differ: legacy duties store just the room number as a
+ * plain string in `d.room`. New-flow duties populate `examRoom.room.building`
+ * so we can show "Building — 301" instead of a bare "301".
+ */
+function getRoomLabel(d: TeacherDuty): string {
+  const room = d.examRoom?.room;
+  if (room?.building?.name && room.roomNumber) {
+    return `${room.building.name} — ${room.roomNumber}`;
+  }
+  return d.room || "—";
+}
+
 export default function DutySection({
   title,
   variant,
@@ -50,17 +84,19 @@ export default function DutySection({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {duties.map((d) => (
+              {duties.map((d) => {
+                const label = getExamLabel(d);
+                return (
                 <tr key={d._id} className="hover:bg-gray-50/50">
                   <td className="px-5 py-3">
                     <div className="font-medium text-gray-900">
-                      {d.exam.name}
+                      {label.title}
                     </div>
                     <div className="text-xs text-gray-400">
-                      {d.exam.department} — Sem {d.exam.semester}
+                      {label.subtitle}
                     </div>
                   </td>
-                  <td className="px-5 py-3 text-gray-600">{d.room}</td>
+                  <td className="px-5 py-3 text-gray-600">{getRoomLabel(d)}</td>
                   <td className="px-5 py-3 text-gray-600">
                     {formatDate(d.date)}
                   </td>
@@ -80,7 +116,8 @@ export default function DutySection({
                     />
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

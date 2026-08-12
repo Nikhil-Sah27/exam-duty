@@ -24,6 +24,10 @@ const findById = (id) => {
   return ExamRoom.findById(id).populate(POPULATE_FIELDS);
 };
 
+const findManyByIds = (ids) => {
+  return ExamRoom.find({ _id: { $in: ids } }).populate(POPULATE_FIELDS);
+};
+
 const deleteById = (id) => {
   return ExamRoom.findByIdAndDelete(id);
 };
@@ -41,6 +45,7 @@ module.exports = {
   findBySchedule,
   findBySchedules,
   findById,
+  findManyByIds,
   deleteById,
   deleteBySchedule,
   deleteBySchedules,

@@ -1,6 +1,6 @@
 const User = require("./user.model");
 
-const ALLOWED_FIELDS = "name email phone role department designation isActive createdAt updatedAt";
+const ALLOWED_FIELDS = "name email phone roles department designation isActive createdAt updatedAt";
 
 const create = (data) => {
   return User.create(data);
@@ -29,8 +29,9 @@ const softDeleteById = (id) => {
   ).select(ALLOWED_FIELDS);
 };
 
+// Matches any user whose `roles` array contains the given role.
 const countByRole = (role) => {
-  return User.countDocuments({ role });
+  return User.countDocuments({ roles: role });
 };
 
 module.exports = { create, findAll, findById, updateById, softDeleteById, countByRole };

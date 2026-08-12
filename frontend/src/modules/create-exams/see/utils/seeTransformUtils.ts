@@ -30,6 +30,8 @@ export function buildSEESlotAllocations(
       assignedRooms: [],
       sharedSeatsReceived: [],
       sharedSeatsGiven: [],
+      shareableMark: null,
+      globalSharedReceived: [],
     };
 
     const slot: SlotAllocation = {

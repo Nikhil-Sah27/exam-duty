@@ -112,7 +112,7 @@ export default function InvigilatorExamDetailsModal({
   isMine,
 }: InvigilatorExamDetailsModalProps) {
   const user = useAuthStore((s) => s.user);
-  const roleConfig = getRoleConfig(user?.role);
+  const roleConfig = getRoleConfig(user?.activeRole || undefined);
   const viewerRole = (roleConfig?.roleKey as OperationalRoleKey) || "invigilator";
   // DCS / RS pick their duty as a whole group — never per room. The
   // classroom modal therefore replaces the per-room "Select Duty" button

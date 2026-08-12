@@ -1,15 +1,13 @@
+import { Link } from "react-router-dom";
 import { Teacher } from "../types";
 import { getRoleLabel, ROLE_BADGE_COLORS_LIGHT } from "@/shared/constants/roles";
+import type { UserRole } from "@/shared/lib/types";
 
 interface TeacherHeaderProps {
   teacher: Teacher;
-  onAssignClick: () => void;
 }
 
-export default function TeacherHeader({
-  teacher,
-  onAssignClick,
-}: TeacherHeaderProps) {
+export default function TeacherHeader({ teacher }: TeacherHeaderProps) {
   const initials = teacher.name
     .split(" ")
     .map((w) => w[0])
@@ -29,11 +27,14 @@ export default function TeacherHeader({
             <h1 className="text-xl font-bold">{teacher.name}</h1>
             <p className="mt-0.5 text-sm text-gray-300">{teacher.email}</p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span
-                className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${ROLE_BADGE_COLORS_LIGHT[teacher.role]}`}
-              >
-                {getRoleLabel(teacher.role)}
-              </span>
+              {(teacher.roles || []).map((r: UserRole) => (
+                <span
+                  key={r}
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${ROLE_BADGE_COLORS_LIGHT[r]}`}
+                >
+                  {getRoleLabel(r)}
+                </span>
+              ))}
               {teacher.department && (
                 <span className="text-xs text-gray-400">
                   {teacher.department}
@@ -51,13 +52,14 @@ export default function TeacherHeader({
           </div>
         </div>
 
-        {/* Right: assign button */}
-        <button
-          onClick={onAssignClick}
+        {/* Right: assign button — navigates into the visual assign-duty
+            wizard (exam grid → exam detail → room modal). */}
+        <Link
+          to={`/manage-duties/${teacher._id}/assign`}
           className="shrink-0 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-500"
         >
           + Assign Duty
-        </button>
+        </Link>
       </div>
     </div>
   );

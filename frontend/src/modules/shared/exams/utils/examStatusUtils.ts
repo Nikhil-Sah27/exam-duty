@@ -44,6 +44,20 @@ export function getTypeSubtitle(examType: string): string {
   return TYPE_SUBTITLE[examType] || examType;
 }
 
+/**
+ * Match a duty against a target room using the room's ObjectId when either
+ * side exposes it (`examRoom.room._id`). Falls back to the legacy string
+ * comparison only when neither side has an id — the string form is a bare
+ * room number and would falsely collide across buildings.
+ */
+function dutyMatchesRoom(d: Duty, roomNumber: string, roomId: string): boolean {
+  const dutyRoomId = d.examRoom?.room?._id;
+  if (dutyRoomId && roomId) {
+    return dutyRoomId === roomId;
+  }
+  return d.room === roomNumber;
+}
+
 /** True when one of `duties` matches the given schedule+room slot. */
 export function isMyDutyInRoom(
   duties: Duty[],
@@ -61,7 +75,7 @@ export function isMyDutyInRoom(
     dDate.setHours(0, 0, 0, 0);
     if (dDate.getTime() !== target.getTime()) return false;
     if (d.startTime !== startTime || d.endTime !== endTime) return false;
-    return d.room === roomNumber || d.room === roomId;
+    return dutyMatchesRoom(d, roomNumber, roomId);
   });
 }
 
@@ -97,7 +111,7 @@ export function hasTimeConflictForSlot(
     const sameSlot =
       d.startTime === startTime &&
       d.endTime === endTime &&
-      (d.room === roomNumber || d.room === roomId);
+      dutyMatchesRoom(d, roomNumber, roomId);
     if (sameSlot) return false;
     return toMinutes(d.startTime) < end && start < toMinutes(d.endTime);
   });

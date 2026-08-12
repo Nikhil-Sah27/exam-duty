@@ -218,6 +218,7 @@ export function useDcsDutySelection() {
         queryKey: ["shared", "duties-by-teacher"],
       });
       queryClient.invalidateQueries({ queryKey: ["shared", "duty-status"] });
+      queryClient.invalidateQueries({ queryKey: ["duty-calculation"] });
     },
     onSuccess: () => {
       setSelected([]);

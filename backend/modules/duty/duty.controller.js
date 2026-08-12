@@ -2,12 +2,12 @@ const dutyService = require("./duty.service");
 const catchAsync = require("../../shared/utils/catchAsync");
 
 const selfAssign = catchAsync(async (req, res) => {
-  const duty = await dutyService.selfAssignDuty(req.body, req.user.id);
+  const duty = await dutyService.selfAssignDuty(req.body, req.user.id, req.user.activeRole);
   res.status(201).json({ success: true, data: duty });
 });
 
 const selfAssignGroup = catchAsync(async (req, res) => {
-  const duties = await dutyService.selfAssignDutyGroup(req.body, req.user.id);
+  const duties = await dutyService.selfAssignDutyGroup(req.body, req.user.id, req.user.activeRole);
   res.status(201).json({ success: true, count: duties.length, data: duties });
 });
 

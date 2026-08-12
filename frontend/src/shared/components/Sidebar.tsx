@@ -8,7 +8,7 @@ export default function Sidebar() {
   const { pathname } = useLocation();
   const user = useAuthStore((s) => s.user);
 
-  const visibleItems = getVisibleNavItems(user?.role);
+  const visibleItems = getVisibleNavItems(user?.activeRole ?? undefined);
 
   return (
     <aside

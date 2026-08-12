@@ -49,7 +49,11 @@ export interface FinalizeSEEPayload {
   semester: string;
   schedules: {
     slotKey: string;
-    courseId: string;
+    // Backend accepts either a bare courseId (legacy) or a tagged courseToken
+    // like "course:<id>" or "group:<electiveGroupId>" — group tokens fan out
+    // to every member course on the server.
+    courseId?: string;
+    courseToken?: string;
     date: string;
     startTime: string;
     endTime: string;
@@ -60,6 +64,20 @@ export interface FinalizeSEEPayload {
     departmentCode: string;
     students?: number;
     isShared?: boolean;
+  }[];
+  /** Global Seat Sharing — owner side. */
+  shareableRoomMarks?: {
+    scheduleKey: string;
+    roomId: string;
+    departmentCode: string;
+    initialShareableSeats: number;
+  }[];
+  /** Global Seat Sharing — consumer side. */
+  globalSharedConsumptions?: {
+    scheduleKey: string;
+    sourceExamRoomId: string;
+    departmentCode: string;
+    studentsAllocated: number;
   }[];
 }
 

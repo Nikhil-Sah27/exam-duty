@@ -1,214 +1,272 @@
-# Exam Duty — Webapp User Flow
+# Exam Duty — Application Flow
 
-End-user walkthrough, screen by screen, with where each click goes.
+Deep, role-by-role walkthrough of the app in action. Complements the [README](README.md) — the README lists features and endpoints; this document narrates how a user actually uses the system, screen by screen.
 
-## 1. You open the app → bounced to login
+Every login lands on `/login`. `AuthGuard` (`frontend/src/shared/components/AuthGuard.tsx`) reads `localStorage["token"]`, calls `GET /api/auth/me`, and — depending on `user.role` — either mounts the CS admin shell or redirects to `/invigilator/dashboard`, `/rs/dashboard`, or `/dcs/dashboard`.
 
-You hit `http://localhost:3001`. `main.tsx` mounts the React tree. The router lands on `/` (Dashboard), but `ProtectedLayout` wraps it in `AuthGuard`. `AuthGuard` runs `useAuthStore.hydrate()` which reads `localStorage["token"]`:
-
-- **No token** → `navigate("/login", { replace: true })` (`AuthGuard.tsx:27-31`). You never see the Dashboard.
-- **Token exists** → it fires `useMe()` (GET `/api/auth/me`), repopulates the `user` object, and renders the protected layout.
-
-## 2. Login screen
-
-`LoginForm.tsx` — centered card with email + password + "Sign In" button. Submit calls `useLogin()` (`auth/hooks/index.ts:7`):
-
-```
-POST /api/auth/login  { email, password }
-  → backend auth.service.js:39 → bcrypt.compare → jwt.sign({ id }, JWT_SECRET, 7d)
-  → returns { user, token }
-  → setAuth(user, token)  // stores token in localStorage, user in Zustand
-  → navigate("/")
-```
-
-Bad credentials → backend throws `AppError("Invalid email or password", 401)` → errorHandler renders `{ success:false, message }` → axios interceptor flattens it to `Error.message` → `<ErrorAlert>` shows it above the form.
-
-## 3. After login: the shell
-
-`ProtectedLayout` renders three things:
-
-- **Navbar** at the top (fixed, 64px tall)
-- **Sidebar** on the left (240px wide when open), driven by `navigation.ts`. Right now you see all 10 items regardless of role (no `roles` filter set):
-  1. Dashboard
-  2. Create Exams
-  3. Exams
-  4. Change Requests
-  5. Manage Duties
-  6. Teachers
-  7. Departments
-  8. Rooms & Buildings
-  9. Reports
-  10. Audit Log
-- **Main** (`<Outlet/>`) — the page you're on.
-
-## 4. Dashboard (`/`)
-
-Currently a placeholder — `DashboardPage.tsx` just renders "Welcome, {user.name} to Exam Duty Management System." That's it. No widgets, no counts. (Could be the next thing to build out.)
-
-## 5. Create Exams flow (`/create-exams`)
-
-This is the heavy workflow. Two top-level cards: **CIE** (internal — IA1/IA2/IA3) and **SEE** (semester-end). SEE is still a placeholder (`SEEWorkflowPlaceholder.tsx`); only CIE is wired up. Picking CIE mounts `CIEPage.tsx`, which is a 4-step wizard driven by `<Stepper>`:
-
-### Step 0 — Configuration (`ConfigStep.tsx`)
-
-You set:
-
-- **Departments** — multi-select (toggled via `DepartmentSelector`, fetched from `/api/departments`).
-- **Semester** — 1–8 dropdown.
-- **Exam Type** — IA-1 / IA-2 / IA-3.
-- **Avg Students per Class** — number, used later for room sizing.
-- **Shifts** — list of `{name, startTime, endTime}` (e.g., Morning 09:00–10:30; you can add multiple).
-- **Start Date** + either click **Auto-calculate** (calls `POST /api/create-exams/cie/calculate-dates` — server picks the required # of days, skipping Sundays — see `cie.utils.js` + `cie.service.js:60-92`) or type the end date manually.
-
-The moment departments + semester are both set, `useDepartmentsData` (`GET /api/create-exams/cie/departments-data`) auto-fetches each department's course list for that semester — those courses populate the dropdowns in the next step. `StatsBar` shows totals reactively (# courses, # students, etc.). Continue is disabled until the config is valid.
-
-### Step 1 — Routine Builder (`RoutineStep.tsx`)
-
-A grid: one row per `(date × shift)` slot, columns are the selected departments. Each cell is a `<select>` of that department's courses. The hook (`useExamCreation.ts`) pre-generates the routine entries; you pick one course per (slot, dept) cell. Already-used courses for that department appear as `(used)` and are disabled, so you can't schedule the same paper twice.
-
-Back/Continue at the bottom.
-
-### Step 2 — Summary (`SummaryStep.tsx`)
-
-A read-only review: 4 stat cards (Total Exams, Exam Days, Departments, Shifts/Day), config recap, list of dates as chips, the full routine table, and any validation warnings (`exam.routineWarnings`).
-
-Clicking **Create Plan & Assign Rooms** fires `useCreateCIEPlan()`:
-
-```
-POST /api/create-exams/cie/plan  { examType, semester, startDate, endDate, shifts, routine }
-  → backend cie.service.js:123 createPlan:
-     - validates dates (no past, end >= start)
-     - checks for overlapping ExamGroup of same type+semester (409 if found)
-     - creates ExamGroup
-     - for each unique (date, shift) builds one ExamSchedule
-     - for each (slot, dept, courseId) creates a CIEPlanEntry
-     - returns { ...examGroup, scheduleMapping: { "date|shiftIdx": scheduleId } }
-```
-
-Frontend stashes the `scheduleMapping` and uses the real schedule IDs to seed `slotAllocations` for the next step.
-
-### Step 3 — Room Assignment (`RoomAssignStep.tsx`)
-
-Fetches buildings/rooms via `useCIERooms` (`GET /api/create-exams/cie/rooms` → grouped by building → floor). For each schedule slot you see a `SlotCard` per department: pick rooms from the room selector. The UI tracks:
-
-- **Primary assignments** — that room is fully owned by that department for that slot.
-- **Shared seats** — one room split across departments (the `Share2` icon, `isShared: true`); the global stats bar shows total shared seats.
-
-A global progress bar shows `capacity / students` coverage and `depts covered` so you know when you're done.
-
-Clicking **Assign Rooms & Finish** fires `useAssignCIERooms()`:
-
-```
-POST /api/create-exams/cie/assign-rooms  { assignments: [{scheduleId, roomId, departmentCode, students?, isShared?}, ...] }
-  → cie.service.js:213 assignRooms:
-     - rejects duplicate (schedule, room, dept) primary assignments
-     - groups ALL (primary + shared) by schedule+room
-     - creates one ExamRoom per group, with departments[] merged
-        (this group-then-insert is the fix from commit 7121bbf — without it, the
-         unique index on schedule+room throws 400 when two depts share a room)
-```
-
-On success the page swaps to a green checkmark summary with **View Exams** (→ `/exams`) and **Create Another** (resets the wizard).
-
-## 6. Exams (`/exams`)
-
-`ExamsPage.tsx` — grid of `ExamGroup` cards from `useExamGroups()` (`GET /api/exam-groups`). Filters by exam type and semester (client-side). Two CRUD entry points:
-
-- **New Exam Group** (top-right `Plus` button) → `CreateExamModal` for ad-hoc creation outside the wizard.
-- **Delete** on a card → `ConfirmDeleteModal` → `useDeleteExamGroup()` (DELETE — *cascades* the schedules/room assignments per the warning copy).
-- Click a card → `/exams/:id` (`ExamDetails.tsx`) which shows the timetable and per-room/duty status. The exams components folder includes `Timetable`, `TimetableDay`, `AddRoomModal`, `AddScheduleModal`, `DutyStatusModal`, `EditExamModal` — that's the per-group editing surface.
-
-## 7. The rest of the sidebar (briefly)
-
-- **Manage Duties** → list of teachers; drill into one to see their duties / cancel / etc. Backed by `/api/duties`. Self-assign and admin-assign both run through `duty.service.js`'s conflict checker + MongoDB transaction.
-- **Change Requests** → faculty submitting swap/drop requests; admin approves/rejects. Backend is wired (`change-request` module), frontend module exists.
-- **Teachers / Departments / Rooms & Buildings** → standard CRUD over `/api/users`, `/api/departments`, `/api/infrastructure`.
-- **Reports / Audit Log** → read-only views over `/api/reports` and `/api/audit`.
-
-## TL;DR of one full path
-
-```
-Open localhost:3001
-  → AuthGuard → no token → /login
-  → submit creds → POST /api/auth/login → token in localStorage
-  → navigate /  (Dashboard placeholder)
-  → click "Create Exams" in Sidebar → /create-exams
-  → pick CIE
-    Step 0: pick depts + sem + exam type + shifts + auto-calc dates
-    Step 1: fill course per (date,shift,dept) cell
-    Step 2: review → POST /api/create-exams/cie/plan
-            (creates ExamGroup + ExamSchedules + CIEPlanEntries)
-    Step 3: assign rooms per slot/dept (with sharing)
-            → POST /api/create-exams/cie/assign-rooms
-            (creates ExamRoom docs grouped by schedule+room)
-  → success screen → "View Exams" → /exams → see the new group
-```
-
-Everywhere along the way, errors thrown server-side (`AppError`) become `{success:false, message}` JSON, the axios interceptor turns that into `new Error(message)`, the TanStack mutation exposes it on `mutation.error`, and components render it via `<ErrorAlert>` or inline red banners. Any 401 (token expired/invalid) logs you out automatically and you're back at `/login`.
+Test logins: see [CREDENTIALS.md](CREDENTIALS.md).
 
 ---
 
-## Appendix — Stack & architecture (background context)
+## 1. CS — Controller of Superintendents
 
-### Stack (actual, not what the README says)
+CS has full system access. On login, the admin shell (`ProtectedLayout`) mounts the left sidebar with every management page.
 
-| Layer | What's there |
-|---|---|
-| Frontend | **Vite 6 + React 19 + React Router 7** (README says Next.js — wrong) |
-| State | Zustand (auth/UI) + TanStack Query (server cache) |
-| Forms | react-hook-form + zod |
-| Backend | Express 4 (CommonJS) on Node, JWT auth, bcrypt |
-| DB | MongoDB via Mongoose 8, with transactions for critical writes |
-| Dev wiring | Vite dev server on `:3001` proxies `/api/*` → `http://localhost:5000` |
+### 1.1 First-time bootstrap
+1. Run `POST /api/users/bootstrap` (no auth required) to create the initial CS user.
+2. Log in.
+3. Add other faculty via **Users** → assign roles (`cs` / `dcs` / `rs` / `invigilator`) and departments.
 
-Root `package.json` uses `concurrently` to boot both halves: `npm run dev` → backend (`nodemon server.js`) + frontend (`vite`).
+### 1.2 Set up academic structure
+1. **Departments** — create departments, then per-department semesters, then courses under each semester. Course type is one of `core`, `professional_elective`, `open_elective`; electives can be organized into `ElectiveGroup`s so the UI renders them grouped.
+2. **Infrastructure** — add buildings; add rooms per building (single or bulk range). Each room carries floor + capacity; `(building, roomNumber)` is unique.
 
-### Backend module shape
+### 1.3 Create exams — the wizard
+Route: `/create-exams`.
 
-Every module under `backend/modules/<name>/` follows the same pattern:
+Two workflows: **CIE** (IA1/IA2/IA3) and **SEE** (semester end). Both share the same shape:
 
-```
-auth.routes.js       → wires URLs to controller, mounts protect middleware
-auth.controller.js   → thin: pulls req.body/req.user, calls service, returns JSON
-auth.service.js      → all business rules, validation, transactions
-auth.repository.js   → only place Mongoose model is touched
-auth.model.js        → Mongoose schema + indexes + pre-hooks
-```
+1. **Config** — pick exam type, semester, and departments (multi-select).
+2. **Routine** — start date + per-day shift times. The `POST /api/create-exams/cie/calculate-dates` (or `see/calculate-dates`) endpoint auto-generates the calendar of exam dates given the number of courses and shifts.
+3. **Room assignment** — per-schedule allocation. The picker groups available rooms by building, warns when a room is already taken in an overlapping schedule (building-aware), and offers "Use Shared Seats" for rooms with a matching `RoomSharingConfiguration`.
+4. **Seat sharing** — for rooms that overlap with an already-shareable schedule, the wizard offers a modal to allocate seats from the source pool. The `remainingSeats` counter uses a `$gte` atomic guard, so two concurrent finalizes can't over-allocate.
+5. **Finalize** — one call to `POST /api/create-exams/cie/finalize` (or `see/finalize`). Inside a single transaction:
+   - `ExamGroup` created (type + semester + date range).
+   - `ExamSchedule` per exam date.
+   - `ExamRoom` per (schedule, room) pair, with per-department seat metadata.
+   - `DCSGroup` per schedule — sized by `ceil(totalStudents / 300)`; rooms distributed with `floor(rooms / N)` per group + a remainder spread to earlier groups; sorted numerically.
+   - `RoomSharingConfiguration` for any room the CS marked shareable during allocation.
+   - `SharedSeatAllocation` for consumer rooms borrowing from a source pool.
 
-Modules actually present (12, README only documents 6):
+### 1.4 Manage duties
+Route: `/manage-duties`.
 
-```
-auth · user · exam · examGroup/examSchedule/examRoom · duty
-change-request · notification · department · infrastructure
-report · audit · create-exams (CIE planner)
-```
+Per-teacher panel showing active/completed/total counts, filters (search + department + role). Clicking a teacher opens the assignment modal to force-assign them to any open slot (`POST /api/duties/admin-assign`).
 
-### Notable backend mechanics
+### 1.5 Review change requests
+Route: `/requests` (or `/change-requests`).
 
-- **Soft delete via Mongoose pre-hook.** `exam.model.js:53-57` registers `pre(/^find/)` that silently injects `{ isCancelled: false }` into every query unless the caller explicitly opts in (`?cancelled=true`). Users have the same pattern via `isActive`.
-- **Conflict detection for duties.** `duty.service.js:10-30` runs two queries before any insert: one for a same-teacher overlap and one for a same-room overlap on that date+timeslot. Backed by compound indexes `{teacher,date,startTime,status}` and `{room,date,startTime,status}` (`duty.model.js:62-63`).
-- **MongoDB transactions on duty assignment.** `duty.service.js:61-89` opens a session, inserts under the session, commits, then *outside* the txn populates and emits the notification. Notifications are intentionally not part of the txn — a notification failure won't roll back the duty.
-- **Notification emitter pattern.** `notification.emitter.js` is the only public surface; other modules `require` only it. `notification.templates.js` maps an event type (`duty_assigned`, `duty_cancelled`, `request_approved`, …) to `{title, message}`. Adding a new notification type = one templates entry, no plumbing.
-- **CIE planner.** `create-exams/cie.service.js` is the heavy custom workflow: pick departments + semester → fetch courses → auto-calculate dates (skipping Sundays) → build `ExamGroup` + `ExamSchedule`s + `CIEPlanEntry`s → then `assignRooms` collapses duplicates into `ExamRoom` docs grouped by `schedule+room` (the bug-fix from commit `7121bbf`).
+Tabs: **Pending**, **Approved**, **Rejected**. The shared `ChangeRequestCard` renders all three scopes:
 
-### Frontend module shape
+- **Duty scope** (`swap`/`drop`/`move`) — invigilator-raised. Move requests show a source → target duty block.
+- **DCS group scope** (`dcs_swap`) — source and target `DCSGroup`s side by side with room chips.
+- **RS group scope** (`rs_swap`) — source duty snapshot and target `ExamRoom` snapshot side by side; both rendered as group blocks with a `Rooms X–Y` range label.
 
-Mirrors the backend, one folder per domain:
+Approve calls `PATCH /api/change-requests/:id/approve`; the service routes internally by `scope`:
+- `duty` → `swap`/`drop`/`move` handled inline in `approveRequest`.
+- `dcs_group` → `approveDcsGroupSwap` — cancels source duties, creates target duties, transfers ownership.
+- `rs_group` → `approveRsGroupSwap` — cancels the snapshotted source duties, creates one duty per snapshotted target `ExamRoom`, all inside a transaction.
 
-```
-src/modules/<name>/
-  components/   pages built from primitives in shared/components
-  hooks/        TanStack Query hooks (useExams, useExam, useCreateExam, ...)
-  services/     wraps shared/lib/api.ts → typed responses
-  types.ts      domain types
-```
+### 1.6 Delete an exam
+Deleting an `ExamGroup`, `ExamSchedule`, or `ExamRoom` triggers `backend/modules/exam-cleanup/services/examDeletionService.js`. In a single transaction it:
+1. Cancels every dependent `Duty` (`status = cancelled`).
+2. Marks open `ChangeRequest`s as `cancelled_exam_deleted`.
+3. Releases `SharedSeatAllocation`s and restores the source pool's `remainingSeats`.
+4. Emits `exam_deleted_duty_release` notifications to every affected teacher.
 
-Routes in `App.tsx` are flat (no Next.js file-based routing) — every protected page sits inside one `<Route element={<ProtectedLayout/>}>`. The sidebar comes from a single `navItems` array in `shared/lib/navigation.ts` filtered by role (`getVisibleNavItems`) — though right now none of the items declare a `roles` array, so they all show.
+---
 
-`shared/store/auth.store.ts` is the only piece of client state that needs to survive a refresh; it persists just the JWT to `localStorage` (not the user object — that gets re-fetched via `/api/auth/me`).
+## 2. DCS — Deputy Controller of Superintendents
 
-### Things worth flagging
+Route base: `/dcs`. Grain: **a whole DCSGroup** (persistent, one DCS per ~300 students).
 
-- **README is stale.** Says Next.js 16, mentions `next.config.ts` rewrites and `app/(protected)/` route groups — none of that exists. It's Vite + React Router. Frontend port is `3001`, not `3000`. Modules listed in the README are a subset of what actually exists.
-- **`getVisibleNavItems` is currently a no-op filter** because no nav item has `roles` set. If you wanted CS/faculty/invigilator views to differ, you'd add `roles: [...]` to each item.
-- **Token in localStorage** is fine for this app's threat model but means any XSS reads the JWT. There's no refresh-token flow — a single 7-day JWT, hard logout on 401.
+### 2.1 Dashboard
+Hero band with:
+- Upcoming groups count.
+- Total rooms under supervision (summed across upcoming groups).
+- Total students.
+
+Below: sections for **Upcoming Duties** (list of claimed groups, one card each with room chips + student count) and **Completed Duties**. Data fetched via `getMyDcsGroups()` (`GET /api/dcs/groups/mine`) and normalized with `normalizeDcsUpcoming/Completed`.
+
+### 2.2 Select Duty
+Route: `/dcs/select-duty`.
+
+Lists all `DCSGroup`s with status `open`. Each card shows:
+- Exam type + semester.
+- Schedule date and time.
+- All rooms in the group with per-room capacity and department chips.
+- Total students and DCS required.
+- Time-conflict warning if the group clashes with any of the DCS's other assigned duties.
+
+Clicking **Claim** → `POST /api/dcs/groups/:id/claim`. In a transaction: creates one `Duty` per room in `assignedRooms`, sets `roomRef` from `examRoom.room._id`, updates the group to `status = claimed` with `assignedTeacher = <you>` and `duties = <ids>`.
+
+### 2.3 Upcoming Duties
+Route: `/dcs/upcoming-duties`.
+
+One card per claimed group, grouped by date. Each card lists every room in the group with the assigned invigilator's name and contact (fetched via `GET /api/dcs/groups/:id/invigilators`), so the DCS knows who to coordinate with on the day.
+
+### 2.4 Change Requests
+Route: `/dcs/change-requests`.
+
+Shows owned groups with a **Request Change** button. Clicking opens the `DcsSwapTargetModal` listing every `open` DCS group that:
+- Isn't the current group.
+- Doesn't time-clash with the DCS's other duties.
+
+Submitting posts `POST /api/change-requests` with `type = dcs_swap`, `dcsSourceGroup`, `dcsTargetGroup`, reason. A unique index on `(dcsSourceGroup, requestedBy, status: pending, scope: dcs_group)` prevents queuing two swaps for the same source group.
+
+Approval by CS moves every duty from source to target atomically and transfers group ownership.
+
+### 2.5 Approving other requests
+DCS is treated as an admin role by `getAdminIds()` in `changeRequest.service.js`. If the sidebar is configured to expose the shared admin change-request page, a DCS user can also approve/reject requests raised by others.
+
+---
+
+## 3. RS — Room Superintendent
+
+Route base: `/rs`. Grain: **a group of ≤5 rooms** partitioned by `(examGroup, schedule, date, startTime, endTime, buildingId)` and sorted numerically. Unlike DCS, RS groups are **client-derived** — there is no `RSGroup` document; the deterministic `groupId = ${scheduleId}:${buildingId}:${chunkIndex}` identifies each group.
+
+The same grouping algorithm (`groupRoomsIntoRSGroups` in `rs/select-duty/utils/rsDutyGroupingUtils.ts`, and `groupRSDutiesIntoUpcomingGroups` in `rs/upcoming-duties/utils/rsUpcomingGrouping.ts`) is used across four surfaces so the RS sees identical groups everywhere.
+
+### 3.1 Dashboard
+Hero band with:
+- **Groups** — number of upcoming groups.
+- **Rooms** — total rooms across those groups.
+- **Buildings** — distinct buildings.
+
+Sections: **Upcoming Duties** and **Completed Duties**, one card per group (never per room). Data comes from `useDutiesByTeacher` → `normalizeRsGroupsUpcoming/Completed`.
+
+### 3.2 Select Duty
+Route: `/rs/select-duty`.
+
+Grid or table view. Each tile is one RS group: `Academic Block — Rooms 001–005`, with per-room chips underneath. Group states:
+- **Available** — no room in the chunk has an RS assigned yet.
+- **Selected** — currently in the RS's selection list.
+- **Full** — every room in the chunk already has an RS.
+- **Conflict** — group's time overlaps with another selection or existing duty (with the reason surfaced in the tile).
+
+Submitting `POST /api/duties/self-assign-group` with the group's `examRoom` IDs creates one duty per room atomically (`selfAssignDutyGroup` in `duty.service.js`).
+
+### 3.3 Upcoming Duties
+Route: `/rs/upcoming-duties`.
+
+Layout: date sections → time-slot subsections → grid of group cards. Each card shows the building + range label, per-room chips, exam type + semester chip, and department chips.
+
+Clicking a card opens `RSUpcomingGroupModal` with the full room roster (floor + capacity per room) and read-only instructions.
+
+### 3.4 Change Requests
+Route: `/rs/change-requests`.
+
+Each owned group is a card with a **Request Change** button. Clicking opens `RsSwapTargetModal`, which reuses `useAvailableDutySlots` (same pipeline as Select Duty) and lists every RS group that:
+- Isn't the source.
+- Has no room already RS-assigned.
+- Doesn't time-clash with any of the RS's *other* duties (self-clash is excluded — moving off source frees those rooms).
+
+Submitting posts `POST /api/change-requests` with:
+- `type: "rs_swap"`
+- `rsSourceDuties`: the source group's duty IDs
+- `rsTargetExamRooms`: the target group's `ExamRoom` IDs
+- `rsSourceKey` / `rsTargetKey`: the deterministic group ids
+
+A unique index on `(rsSourceKey, requestedBy, status: pending, scope: rs_group)` prevents duplicate swaps.
+
+Approval (`approveRsGroupSwap`) cancels every source duty and creates one new duty per target `ExamRoom`, all with `roomRef` populated for building-aware conflict scanning.
+
+---
+
+## 4. Invigilator — Faculty
+
+Route base: `/invigilator`. Grain: **one room per time slot**.
+
+### 4.1 Dashboard
+Hero band + upcoming/completed sections. One card per duty (per room), grouped by date and time slot.
+
+### 4.2 Exams
+Route: `/invigilator/exams` and `/invigilator/exams/:id`.
+
+- List view: all upcoming/ongoing exam groups the invigilator can pick from.
+- Detail view: per-schedule timetable with a coloured pill per room:
+  - **Available** — open for selection.
+  - **My duty** — assigned to this invigilator (matched by `examRoom.room._id`, not by room number, so cross-building numbers never collide).
+  - **Occupied** — another invigilator has this slot.
+  - **Time conflict** — an existing assignment of the invigilator overlaps this slot.
+
+### 4.3 Select Duty
+Route: `/invigilator/select-duty`.
+
+Grid (default) or table. Available slots only — filtered through `dutySelectionUtils.ts`:
+
+- `isDutyAvailable(slot, myDuties, "invigilatorAssigned")`:
+  - Not pending.
+  - Role-specific slot not filled (`flags.invigilatorAssigned`).
+  - Invigilator hasn't already claimed the same room+time (matched by `examRoom.room._id`).
+  - No time overlap with any of the invigilator's other assigned duties.
+
+Selecting a slot and confirming posts `POST /api/duties/self-assign` with `examScheduleId` + `examRoomId`. The service validates lifecycle (past schedules rejected), runs the conflict scan, and creates the `Duty` with `roomRef` set from the resolved `examRoom.room._id`.
+
+### 4.4 Upcoming Duties
+Route: `/invigilator/upcoming-duties`.
+
+One card per assigned duty. Cards show exam type + semester chip, invigilator chip, time, date, and `Building — Room` label. Clicking opens `UpcomingDutyModal` with the paper/course summary (scoped to the room's department), reporting time (15 min before start by default), and detailed room info.
+
+### 4.5 Change Requests
+Route: `/invigilator/change-requests`.
+
+Three request types:
+
+1. **Swap** — pick a partner teacher; on approval, the partner takes over the duty.
+2. **Drop** — with reason; on approval, the duty is cancelled.
+3. **Move** — the modal fetches replacements via `GET /api/change-requests/replacements/:dutyId`. Only slots that are:
+   - Not the current slot.
+   - Not in the past.
+   - Not already invigilator-assigned (building-aware via `roomRef`).
+   - Not time-clashing with the invigilator's other assigned duties.
+
+On approval, the old duty is cancelled and a new duty is created on the target schedule + examRoom with `roomRef` set from `requestedExamRoom.room._id`.
+
+---
+
+## 5. Cross-Cutting Systems
+
+### 5.1 Conflict Detection
+
+`backend/modules/duty/duty.repository.js:findRoomConflict` scopes by:
+- `roomRef` when the caller provides one — building-aware.
+- Legacy `room` string as a fallback for old duties predating the `roomRef` field.
+- The caller's `role` so DCS/RS/Invigilator slots on the same room are independent (a room can host all three at once).
+
+The equivalent frontend logic lives in:
+- `frontend/src/modules/invigilator/duties/utils/dutySelectionUtils.ts` — `dutyMatchesSlot(duty, slot)` prefers `examRoom.room._id === slot.roomId`.
+- `frontend/src/modules/shared/exams/utils/examStatusUtils.ts` — same helper for the shared exam views.
+
+### 5.2 Notifications
+
+Emitted via `backend/modules/notification/notification.emitter.js`:
+
+| Type | Fires when |
+| --- | --- |
+| `duty_assigned` | Admin assigns a teacher to a slot. |
+| `duty_cancelled` | Any duty is cancelled. |
+| `request_submitted` | A change request lands — recipients are all CS + DCS. |
+| `request_approved` / `request_rejected` | CS/DCS reviews a request. |
+| `duty_swapped` | Approved `swap` request — target teacher gets a heads-up. |
+| `exam_deleted_duty_release` | Cascade delete releases the teacher's duty. |
+
+Notifications reference either a `Duty` or a `ChangeRequest`, so the UI bell can deep-link to the record.
+
+### 5.3 Seat Sharing
+
+`backend/modules/seat-sharing/`:
+- `RoomSharingConfiguration` — one per shareable `ExamRoom`. Tracks `initialShareableSeats`, `remainingSeats`, source metadata.
+- `SharedSeatAllocation` — one per consumer group borrowing seats.
+
+Discovery: `POST /api/seat-sharing/available` finds overlapping shareable rooms.
+
+Allocation happens inside the exam finalize flow. Each allocation decrements `remainingSeats` with `{ $gte: <need> }` — atomic under concurrent finalizes.
+
+Release: deleting an `ExamRoom` or an allocation restores `remainingSeats`.
+
+### 5.4 Auth
+
+`shared/middleware/auth.js` implements `protect` — reads `Authorization: Bearer <token>`, verifies via `JWT_SECRET`, looks up the user, and attaches to `req.user`. Routes mount `protect` explicitly at the route file level. There is no per-endpoint role gate in middleware today; role-sensitive logic (e.g. "only the group owner can swap") lives in the service layer.
+
+Frontend `useAuthStore` persists the token to `localStorage`; the Axios instance in `frontend/src/shared/lib/api.ts` attaches the header automatically and logs out on 401.
+
+### 5.5 Data Freshness
+
+Every screen that mutates duties (Select Duty, Change Requests, Manage Duties) uses TanStack React Query. Mutations invalidate a canonical set of keys via `invalidateAll` in `frontend/src/modules/shared/change-requests/hooks/useChangeRequests.ts`:
+- `change-requests` (all lists)
+- `shared/duty-status` (per-exam-group flags used by the exam detail views)
+- `shared/duties-by-teacher` (the source of truth for Dashboard + Upcoming Duties + Change Requests + RS group derivation)
+- `dcs` (DCS group lists)
+
+So an approved swap immediately refreshes every affected surface without extra plumbing.

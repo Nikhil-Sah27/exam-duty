@@ -43,13 +43,28 @@ function overlaps(
   return toMinutes(startA) < toMinutes(endB) && toMinutes(startB) < toMinutes(endA);
 }
 
+/**
+ * Match a duty against the target slot using the room's ObjectId when either
+ * side exposes it (`examRoom.room._id`). Falls back to the legacy string
+ * comparison only when neither side has an id — the string form is a bare
+ * room number and would falsely collide across buildings (e.g. "004" in the
+ * Academic Block vs "004" in the Lab Block).
+ */
+function dutyMatchesSlot(d: Duty, slot: SlotContext): boolean {
+  const dutyRoomId = d.examRoom?.room?._id;
+  if (dutyRoomId && slot.roomId) {
+    return dutyRoomId === slot.roomId;
+  }
+  return d.room === slot.roomNumber;
+}
+
 /** Does the current user already have a duty in this exact slot+room? */
 export function isSelectedByMe(slot: SlotContext, myDuties: Duty[]): boolean {
   return myDuties.some((d) => {
     if (d.status !== "assigned") return false;
     if (!sameDay(d.date, slot.date)) return false;
     if (d.startTime !== slot.startTime || d.endTime !== slot.endTime) return false;
-    return d.room === slot.roomNumber || d.room === slot.roomId;
+    return dutyMatchesSlot(d, slot);
   });
 }
 
@@ -60,7 +75,7 @@ export function hasTimeConflict(slot: SlotContext, myDuties: Duty[]): boolean {
     const sameSlot =
       d.startTime === slot.startTime &&
       d.endTime === slot.endTime &&
-      (d.room === slot.roomNumber || d.room === slot.roomId);
+      dutyMatchesSlot(d, slot);
     if (sameSlot) return false;
     return overlaps(d.startTime, d.endTime, slot.startTime, slot.endTime);
   });

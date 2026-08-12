@@ -1,6 +1,8 @@
 const Department = require("../department/department.model");
 const Semester = require("../department/semester.model");
 const Course = require("../department/course.model");
+const ElectiveGroup = require("../department/electiveGroup.model");
+const { resolveAssignment } = require("./assignmentResolver");
 const Building = require("../infrastructure/building.model");
 const Room = require("../infrastructure/infrastructure.model");
 const ExamGroup = require("../exam/examGroup.model");
@@ -12,6 +14,7 @@ const { generateExamDates } = require("./cie.utils");
 const { withOptionalTransaction } = require("../../shared/utils/withOptionalTransaction");
 const dcsGroupService = require("../dcs/dcsGroup.service");
 const roomReservationService = require("../exam/roomReservation.service");
+const seatSharingService = require("../seat-sharing/seatSharing.service");
 
 /**
  * Fetch departments with their semester + courses for a given semester name.
@@ -43,14 +46,21 @@ const getDepartmentsData = async (departmentIds, semesterName) => {
 
     if (!semester) continue;
 
-    const courses = await Course.find({ semester: semester._id }).sort({
-      code: 1,
-    });
+    const courses = await Course.find({ semester: semester._id })
+      .populate("electiveGroup", "name type")
+      .sort({ code: 1 });
+
+    // Fetch ElectiveGroups for this semester too — the wizard renders them
+    // as single-select entries alongside core courses.
+    const electiveGroups = await ElectiveGroup.find({
+      semester: semester._id,
+    }).sort({ type: 1, name: 1 });
 
     result.push({
       ...dept.toObject(),
       semester: semester.toObject(),
       courses: courses.map((c) => c.toObject()),
+      electiveGroups: electiveGroups.map((g) => g.toObject()),
     });
   }
 
@@ -181,19 +191,21 @@ const createPlan = async (data, userId) => {
 
     const schedule = scheduleMap.get(scheduleKey);
 
-    // Create plan entries for each department → course assignment
-    const entryPromises = Object.entries(entry.assignments)
-      .filter(([, courseId]) => courseId)
-      .map(([deptId, courseId]) =>
-        CIEPlanEntry.create({
+    // Create plan entries for each dept assignment. Token may be a bare
+    // courseId, "course:<id>", or "group:<electiveGroupId>" — group tokens fan
+    // out to every member course of the elective group.
+    for (const [deptId, token] of Object.entries(entry.assignments || {})) {
+      if (!token) continue;
+      const { courseIds } = await resolveAssignment(token);
+      for (const courseId of courseIds) {
+        await CIEPlanEntry.create({
           examGroup: examGroup._id,
           schedule: schedule._id,
           department: deptId,
           course: courseId,
-        })
-      );
-
-    await Promise.all(entryPromises);
+        });
+      }
+    }
   }
 
   // Build a mapping of slotKey → scheduleId for the frontend
@@ -373,6 +385,10 @@ const finalizeCIEPlan = async (data, userId) => {
     shifts,
     routine,
     roomAssignments,
+    // Global Seat Sharing — new payload. Both default to [] so existing callers
+    // that don't send them keep working unchanged.
+    shareableRoomMarks = [],
+    globalSharedConsumptions = [],
   } = data;
 
   // ---- Top-level validation (cheap, run before opening a session) ----
@@ -420,7 +436,13 @@ const finalizeCIEPlan = async (data, userId) => {
     }
   }
 
-  const duplicate = await ExamGroup.findOne({
+  // When an existing (examType, semester) group overlaps the requested dates,
+  // we don't reject — the caller is adding more departments (or extending) to
+  // the same conceptual exam. Persist into it so the Exams UI still shows
+  // one card per (examType, semester). CIEPlanEntry's unique index
+  // (examGroup, schedule, department) will surface a real conflict if the
+  // same dept is being re-scheduled in a slot it already occupies.
+  const existingGroup = await ExamGroup.findOne({
     examType,
     semester: parseInt(semester, 10),
     isActive: true,
@@ -431,12 +453,6 @@ const finalizeCIEPlan = async (data, userId) => {
       },
     ],
   });
-  if (duplicate) {
-    throw new AppError(
-      `An ${examType} exam for Semester ${semester} already exists with overlapping dates`,
-      409,
-    );
-  }
 
   // ---- Global room-reservation conflict check ----
   //
@@ -478,25 +494,66 @@ const finalizeCIEPlan = async (data, userId) => {
   }
   await roomReservationService.assertNoConflicts({
     requests: reservationRequests,
+    // When merging, the existing group's reservations are ours — don't self-conflict.
+    excludeExamGroupId: existingGroup?._id || null,
   });
+
+  // ---- Global Seat Sharing pre-flight ----
+  // Verify each declared consumption still lines up with a live shareable
+  // config with enough seats. Runs outside the transaction so we surface a
+  // clean 409 before writing anything.
+  await seatSharingService.validateConsumptions(globalSharedConsumptions);
 
   // ---- Transactional persistence ----
 
   return withOptionalTransaction(async (session) => {
     const sessionOpt = session ? { session } : {};
 
-    const [examGroup] = await ExamGroup.create(
-      [
-        {
-          examType,
-          semester: parseInt(semester, 10),
-          startDate: new Date(startDate),
-          endDate: new Date(endDate),
-          createdBy: userId,
-        },
-      ],
-      sessionOpt,
-    );
+    // Reuse an existing (examType, semester) group when one overlaps —
+    // otherwise create fresh. When reusing, widen its date range if the new
+    // plan pushes past either edge.
+    let examGroup;
+    if (existingGroup) {
+      examGroup = existingGroup;
+      const newStart = new Date(startDate) < examGroup.startDate ? new Date(startDate) : examGroup.startDate;
+      const newEnd = new Date(endDate) > examGroup.endDate ? new Date(endDate) : examGroup.endDate;
+      if (
+        newStart.getTime() !== examGroup.startDate.getTime() ||
+        newEnd.getTime() !== examGroup.endDate.getTime()
+      ) {
+        examGroup.startDate = newStart;
+        examGroup.endDate = newEnd;
+        await examGroup.save(sessionOpt);
+      }
+    } else {
+      [examGroup] = await ExamGroup.create(
+        [
+          {
+            examType,
+            semester: parseInt(semester, 10),
+            startDate: new Date(startDate),
+            endDate: new Date(endDate),
+            createdBy: userId,
+          },
+        ],
+        sessionOpt,
+      );
+    }
+
+    // Pre-load schedules the merged group already owns so we reuse them when
+    // the same (date, shift) is being scheduled again.
+    const existingScheduleByKey = new Map();
+    if (existingGroup) {
+      const prior = await ExamSchedule.find(
+        { examGroup: examGroup._id },
+        null,
+        sessionOpt,
+      );
+      for (const s of prior) {
+        const dateKey = new Date(s.date).toISOString().slice(0, 10);
+        existingScheduleByKey.set(`${dateKey}|${s.startTime}|${s.endTime}`, s._id);
+      }
+    }
 
     // 1 ExamSchedule per unique (date, shiftIndex). Keep a slotKey → _id map
     // so room assignments can resolve their schedule ref.
@@ -508,6 +565,13 @@ const finalizeCIEPlan = async (data, userId) => {
       const shift = shifts[entry.shiftIndex];
       if (!shift) {
         throw new AppError(`Routine references unknown shiftIndex ${entry.shiftIndex}`, 400);
+      }
+
+      const scheduleKey = `${entry.date}|${shift.startTime}|${shift.endTime}`;
+      const reused = existingScheduleByKey.get(scheduleKey);
+      if (reused) {
+        slotKeyToScheduleId.set(slotKey, reused);
+        continue;
       }
 
       const [schedule] = await ExamSchedule.create(
@@ -524,24 +588,30 @@ const finalizeCIEPlan = async (data, userId) => {
       slotKeyToScheduleId.set(slotKey, schedule._id);
     }
 
-    // CIEPlanEntries — one per (schedule × department × course).
+    // CIEPlanEntries — one per (schedule × department × course). An assignment
+    // token may be a bare courseId, "course:<id>", or "group:<electiveGroupId>";
+    // group tokens fan out to every member course so all electives in the
+    // group inherit the same schedule + room set.
     for (const entry of scheduledRoutine) {
       const scheduleId = slotKeyToScheduleId.get(
         `${entry.date}|${entry.shiftIndex}`,
       );
-      for (const [deptId, courseId] of Object.entries(entry.assignments || {})) {
-        if (!courseId) continue;
-        await CIEPlanEntry.create(
-          [
-            {
-              examGroup: examGroup._id,
-              schedule: scheduleId,
-              department: deptId,
-              course: courseId,
-            },
-          ],
-          sessionOpt,
-        );
+      for (const [deptId, token] of Object.entries(entry.assignments || {})) {
+        if (!token) continue;
+        const { courseIds } = await resolveAssignment(token);
+        for (const courseId of courseIds) {
+          await CIEPlanEntry.create(
+            [
+              {
+                examGroup: examGroup._id,
+                schedule: scheduleId,
+                department: deptId,
+                course: courseId,
+              },
+            ],
+            sessionOpt,
+          );
+        }
       }
     }
 
@@ -567,8 +637,39 @@ const finalizeCIEPlan = async (data, userId) => {
       roomGroups.get(key).departments.add(a.departmentCode);
     }
 
-    for (const group of roomGroups.values()) {
-      await ExamRoom.create(
+    // Persist ExamRooms AND remember which _id we created for each
+    // (schedule, room) pair — needed so shareable marks can resolve their
+    // target ExamRoom without another round-trip. When merging into an
+    // existing group we may find rooms already created for a reused schedule;
+    // merge new departments into their `departments` set rather than colliding
+    // on the (schedule, room) unique index.
+    const examRoomIdByScheduleRoom = new Map();
+    const priorExamRoomByKey = new Map();
+    if (existingGroup) {
+      const reusedScheduleIds = Array.from(existingScheduleByKey.values());
+      if (reusedScheduleIds.length > 0) {
+        const prior = await ExamRoom.find(
+          { schedule: { $in: reusedScheduleIds } },
+          null,
+          sessionOpt,
+        );
+        for (const er of prior) {
+          priorExamRoomByKey.set(`${er.schedule}|${er.room}`, er);
+        }
+      }
+    }
+    for (const [key, group] of roomGroups.entries()) {
+      const existingRoom = priorExamRoomByKey.get(key);
+      if (existingRoom) {
+        const merged = new Set([...existingRoom.departments, ...group.departments]);
+        if (merged.size !== existingRoom.departments.length) {
+          existingRoom.departments = Array.from(merged);
+          await existingRoom.save(sessionOpt);
+        }
+        examRoomIdByScheduleRoom.set(key, existingRoom._id);
+        continue;
+      }
+      const [created] = await ExamRoom.create(
         [
           {
             schedule: group.schedule,
@@ -578,12 +679,101 @@ const finalizeCIEPlan = async (data, userId) => {
         ],
         sessionOpt,
       );
+      examRoomIdByScheduleRoom.set(key, created._id);
+    }
+
+    // ---- Seat sharing (owner side): mark selected rooms shareable ----
+    let shareableConfigsCreated = 0;
+    for (const mark of shareableRoomMarks) {
+      const scheduleId = slotKeyToScheduleId.get(mark.scheduleKey);
+      if (!scheduleId) {
+        throw new AppError(
+          `Shareable mark references unknown slot ${mark.scheduleKey}`,
+          400,
+        );
+      }
+      const examRoomId = examRoomIdByScheduleRoom.get(
+        `${scheduleId}|${mark.roomId}`,
+      );
+      if (!examRoomId) {
+        throw new AppError(
+          "Shareable mark references a room that isn't in this exam's assignments",
+          400,
+        );
+      }
+      await seatSharingService.markRoomShareable({
+        examRoomId,
+        initialShareableSeats: mark.initialShareableSeats,
+        userId,
+        session,
+      });
+      shareableConfigsCreated += 1;
+    }
+
+    // ---- Seat sharing (consumer side): allocate borrowed seats ----
+    let sharedAllocationsCreated = 0;
+    for (const consumption of globalSharedConsumptions) {
+      const consumerScheduleId = slotKeyToScheduleId.get(consumption.scheduleKey);
+      if (!consumerScheduleId) {
+        throw new AppError(
+          `Shared consumption references unknown slot ${consumption.scheduleKey}`,
+          400,
+        );
+      }
+      await seatSharingService.allocateSharedSeats({
+        examRoomId: consumption.sourceExamRoomId,
+        consumerExamGroupId: examGroup._id,
+        consumerScheduleId,
+        consumerDepartmentCode: consumption.departmentCode,
+        studentsAllocated: consumption.studentsAllocated,
+        session,
+      });
+      sharedAllocationsCreated += 1;
+    }
+
+    // ---- Intra-batch consumers of shareable rooms ----
+    //
+    // When a dept borrows seats from another dept's shareable-marked room
+    // WITHIN the same exam group (the "intra-batch" flow via SeatSharingModal),
+    // the borrow is expressed as a roomAssignment with isShared=true. The
+    // shareable config's remainingSeats counter must be decremented too, or the
+    // NEXT exam group scheduled at the same slot will see the full pool and
+    // over-allocate the same physical seats.
+    for (const a of roomAssignments) {
+      if (!a.isShared) continue;
+      const scheduleId = slotKeyToScheduleId.get(a.scheduleId);
+      if (!scheduleId) continue;
+      const sourceExamRoomId = examRoomIdByScheduleRoom.get(
+        `${scheduleId}|${a.roomId}`,
+      );
+      if (!sourceExamRoomId) continue;
+      const studentsAllocated = Number(a.students) || 0;
+      if (studentsAllocated <= 0) continue;
+      // Only decrement if the source room is actually marked shareable — the
+      // owner may not have opted in, in which case this is legacy in-memory
+      // sharing with no persistent counter to update.
+      const state = await seatSharingService.getSharingStateForExamRoom(
+        sourceExamRoomId,
+        session,
+      );
+      if (!state.config || !state.config.shareable) continue;
+      await seatSharingService.allocateSharedSeats({
+        examRoomId: sourceExamRoomId,
+        consumerExamGroupId: examGroup._id,
+        consumerScheduleId: scheduleId,
+        consumerDepartmentCode: a.departmentCode,
+        studentsAllocated,
+        session,
+      });
+      sharedAllocationsCreated += 1;
     }
 
     return {
       ...examGroup.toObject(),
       schedulesCreated: slotKeyToScheduleId.size,
       roomsCreated: roomGroups.size,
+      shareableConfigsCreated,
+      sharedAllocationsCreated,
     };
   });
 

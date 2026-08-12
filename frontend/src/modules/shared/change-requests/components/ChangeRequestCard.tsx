@@ -1,5 +1,18 @@
-import { ArrowRight, Calendar, Clock, Crown, DoorOpen, User } from "lucide-react";
-import type { ChangeRequest, DcsGroupRef } from "../types/changeRequest.types";
+import {
+  ArrowRight,
+  Building2,
+  Calendar,
+  Clock,
+  Crown,
+  DoorOpen,
+  User,
+} from "lucide-react";
+import type {
+  ChangeRequest,
+  DcsGroupRef,
+  RsSourceDutyRef,
+  RsTargetExamRoomRef,
+} from "../types/changeRequest.types";
 import ChangeRequestStatusBadge from "./ChangeRequestStatusBadge";
 
 function formatDate(s: string): string {
@@ -130,6 +143,119 @@ function DcsGroupBlock({
   );
 }
 
+function rsGroupSummary(
+  duties: readonly RsSourceDutyRef[] | undefined,
+  rooms: readonly RsTargetExamRoomRef[] | undefined,
+  side: "source" | "target",
+) {
+  const items = side === "source" ? duties ?? [] : rooms ?? [];
+  if (items.length === 0) return null;
+  const first =
+    side === "source"
+      ? (items[0] as RsSourceDutyRef).examRoom?.room
+      : (items[0] as RsTargetExamRoomRef).room;
+  const buildingName = first?.building?.name || "—";
+  const roomNumbers =
+    side === "source"
+      ? (duties ?? []).map((d) => d.examRoom?.room?.roomNumber || d.room)
+      : (rooms ?? []).map((er) => er.room?.roomNumber || "");
+  const sorted = [...roomNumbers].sort((a, b) => {
+    const an = parseInt(a, 10);
+    const bn = parseInt(b, 10);
+    if (Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return an - bn;
+    return a.localeCompare(b);
+  });
+  const rangeLabel =
+    sorted.length === 0
+      ? ""
+      : sorted.length === 1
+        ? `Room ${sorted[0]}`
+        : `Rooms ${sorted[0]}–${sorted[sorted.length - 1]}`;
+  const schedule =
+    side === "source"
+      ? (items[0] as RsSourceDutyRef).examSchedule
+      : (items[0] as RsTargetExamRoomRef).schedule;
+  const depts = new Set<string>();
+  if (side === "source") {
+    for (const d of duties ?? []) {
+      for (const dep of d.examRoom?.departments ?? []) depts.add(dep.toUpperCase());
+    }
+  } else {
+    for (const er of rooms ?? []) {
+      for (const dep of er.departments ?? []) depts.add(dep.toUpperCase());
+    }
+  }
+  return {
+    buildingName,
+    rangeLabel,
+    roomNumbers: sorted,
+    schedule,
+    departments: [...depts].sort(),
+  };
+}
+
+function RsGroupBlock({
+  label,
+  summary,
+}: {
+  label: string;
+  summary: NonNullable<ReturnType<typeof rsGroupSummary>>;
+}) {
+  return (
+    <div className="flex-1 rounded-xl border-2 border-indigo-200 bg-gradient-to-br from-indigo-50 via-white to-blue-50 px-3 py-2.5">
+      <div className="mb-1.5 flex items-center justify-between">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+          {label}
+        </p>
+        <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-indigo-600 to-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow-sm">
+          <Building2 className="h-2.5 w-2.5" />
+          RS · Group
+        </span>
+      </div>
+      <div className="space-y-1 text-xs text-gray-600">
+        {summary.schedule && (
+          <>
+            <div className="flex items-center gap-1.5">
+              <Calendar className="h-3 w-3 text-gray-400" />
+              {formatDate(summary.schedule.date)}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Clock className="h-3 w-3 text-gray-400" />
+              {formatTime(summary.schedule.startTime)} – {formatTime(summary.schedule.endTime)}
+            </div>
+          </>
+        )}
+        <div className="flex items-center gap-1.5 text-sm font-semibold text-gray-700">
+          <DoorOpen className="h-3 w-3 text-gray-400" />
+          {summary.buildingName} — {summary.rangeLabel}
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1">
+        {summary.roomNumbers.map((rn) => (
+          <span
+            key={rn}
+            className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[11px] font-semibold text-gray-700 shadow-sm ring-1 ring-gray-200"
+          >
+            {rn}
+          </span>
+        ))}
+      </div>
+      {summary.departments.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1 border-t border-indigo-100 pt-1.5">
+          {summary.departments.map((d) => (
+            <span
+              key={d}
+              className="rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700"
+            >
+              {d}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ChangeRequestCard({
   request,
   reviewActions,
@@ -137,13 +263,16 @@ export default function ChangeRequestCard({
 }: ChangeRequestCardProps) {
   const r = request;
   const isDcsSwap = r.scope === "dcs_group" || r.type === "dcs_swap";
+  const isRsSwap = r.scope === "rs_group" || r.type === "rs_swap";
   const typeLabel = isDcsSwap
     ? "DCS Swap"
-    : r.type === "move"
-      ? "Move"
-      : r.type === "swap"
-        ? "Swap"
-        : "Drop";
+    : isRsSwap
+      ? "RS Swap"
+      : r.type === "move"
+        ? "Move"
+        : r.type === "swap"
+          ? "Swap"
+          : "Drop";
 
   const movingTo =
     r.type === "move" && r.requestedDate && r.requestedStartTime && r.requestedEndTime
@@ -186,7 +315,22 @@ export default function ChangeRequestCard({
         </span>
       </header>
 
-      {isDcsSwap && r.dcsSourceGroup && r.dcsTargetGroup ? (
+      {isRsSwap ? (
+        (() => {
+          const src = rsGroupSummary(r.rsSourceDuties, undefined, "source");
+          const tgt = rsGroupSummary(undefined, r.rsTargetExamRooms, "target");
+          if (!src || !tgt) return null;
+          return (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+              <RsGroupBlock label="Current Assignment" summary={src} />
+              <div className="hidden items-center justify-center px-1 sm:flex">
+                <ArrowRight className="h-4 w-4 text-gray-300" />
+              </div>
+              <RsGroupBlock label="Requested Assignment" summary={tgt} />
+            </div>
+          );
+        })()
+      ) : isDcsSwap && r.dcsSourceGroup && r.dcsTargetGroup ? (
         <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
           <DcsGroupBlock label="Current Assignment" group={r.dcsSourceGroup} />
           <div className="hidden items-center justify-center px-1 sm:flex">

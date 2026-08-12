@@ -3,9 +3,10 @@ import {
   getTeachers,
   getTeacherById,
   getTeacherDuties,
-  assignDuty,
+  assignDutyBySlot,
+  type AssignByScheduleSlotPayload,
 } from "../services";
-import { AssignDutyPayload } from "../types";
+import { DUTY_CALC_ROOT } from "@/modules/duty-calculation/hooks/useDutyProgress";
 
 const TEACHERS_KEY = ["manage-duties", "teachers"];
 const teacherDetailKey = (id: string) => ["manage-duties", "teacher", id];
@@ -34,15 +35,23 @@ export const useTeacherDuties = (teacherId: string) => {
   });
 };
 
-export const useAssignDuty = (teacherId: string) => {
+/**
+ * Mutation for the visual CS workflow — takes an ExamSchedule + ExamRoom
+ * pair. Invalidates duty caches, exam-group duty-status maps (so the room
+ * dot flips from red to green immediately), and duty-calculation progress
+ * (so the teacher's Assigned/Remaining tiles refresh).
+ */
+export const useAssignDutyBySlot = (teacherId: string) => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: AssignDutyPayload) => assignDuty(data),
+    mutationFn: (data: AssignByScheduleSlotPayload) => assignDutyBySlot(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: teacherDutiesKey(teacherId) });
       queryClient.invalidateQueries({ queryKey: TEACHERS_KEY });
       queryClient.invalidateQueries({ queryKey: ["duties"] });
+      queryClient.invalidateQueries({ queryKey: ["exam-groups"] });
+      queryClient.invalidateQueries({ queryKey: DUTY_CALC_ROOT });
     },
   });
 };

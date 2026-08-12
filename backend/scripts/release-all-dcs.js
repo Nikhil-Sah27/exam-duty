@@ -24,7 +24,7 @@ async function main() {
   console.log("\n=== DCS release sweep ===");
 
   // 1. Find every DCS user (active + inactive both — defensive).
-  const dcsUsers = await User.find({ role: "dcs" })
+  const dcsUsers = await User.find({ roles: "dcs" })
     .setOptions({ getFilter: () => ({}) }) // bypass the soft-delete pre-find
     .select("_id name email");
 

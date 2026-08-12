@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useTeachers } from "../hooks";
+import type { UserRole } from "@/shared/lib/types";
 import { useDuties } from "@/modules/duties/hooks";
 import { TeacherFilters, TeacherWithStats } from "../types";
 import TeacherListItem from "./TeacherListItem";
@@ -57,7 +58,7 @@ export default function ManageDutiesPage() {
         if (!match) return false;
       }
       if (filters.department && t.department !== filters.department) return false;
-      if (filters.role && t.role !== filters.role) return false;
+      if (filters.role && !t.roles?.includes(filters.role as UserRole)) return false;
       return true;
     });
   }, [teachersWithStats, filters]);

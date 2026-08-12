@@ -26,10 +26,26 @@ const dutySchema = new mongoose.Schema(
       ref: "User",
       required: [true, "Teacher is required"],
     },
+    // Which role slot this duty fills. Since a teacher can hold multiple roles
+    // (e.g. Associate Professor = rs + invigilator), the Duty needs to record
+    // *which* slot was claimed so per-role room-occupancy is unambiguous.
+    role: {
+      type: String,
+      enum: ["dcs", "rs", "invigilator"],
+      required: [true, "Duty role is required"],
+    },
     room: {
       type: String,
       required: [true, "Room is required"],
       trim: true,
+    },
+    // Physical Room reference — the source of truth for conflict scans.
+    // `room` (String) is a display label (just the room number) and collides
+    // across buildings; roomRef is scoped to a specific building's room.
+    roomRef: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Room",
+      default: null,
     },
     date: {
       type: Date,
@@ -75,5 +91,7 @@ const dutySchema = new mongoose.Schema(
 // Compound index — one teacher per time slot, one room per time slot
 dutySchema.index({ teacher: 1, date: 1, startTime: 1, status: 1 });
 dutySchema.index({ room: 1, date: 1, startTime: 1, status: 1 });
+dutySchema.index({ roomRef: 1, date: 1, startTime: 1, status: 1 });
+dutySchema.index({ roomRef: 1, role: 1, date: 1, startTime: 1, status: 1 });
 
 module.exports = mongoose.model("Duty", dutySchema);

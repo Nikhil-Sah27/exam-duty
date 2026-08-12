@@ -26,10 +26,17 @@ import {
 } from "../types";
 
 const DEPTS_KEY = ["departments"];
+const DUTY_CALC_KEY = ["duty-calculation"];
 const deptStatsKey = (id: string) => ["departments", id, "stats"];
 const semestersKey = (deptId: string) => ["departments", deptId, "semesters"];
 const coursesKey = (semId: string) => ["semesters", semId, "courses"];
 const electiveGroupsKey = (semId: string) => ["semesters", semId, "elective-groups"];
+
+// Every dept/sem/course mutation changes the duty-target formula inputs
+// (course count, student count). Downstream widgets rely on this invalidation
+// to refresh without a manual reload.
+const invalidateDutyCalc = (qc: ReturnType<typeof useQueryClient>) =>
+  qc.invalidateQueries({ queryKey: DUTY_CALC_KEY });
 
 // ---------- Department ----------
 
@@ -47,7 +54,10 @@ export const useCreateDepartment = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: CreateDepartmentPayload) => createDepartment(data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: DEPTS_KEY }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: DEPTS_KEY });
+      invalidateDutyCalc(qc);
+    },
   });
 };
 
@@ -56,7 +66,10 @@ export const useUpdateDepartment = () => {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<CreateDepartmentPayload> }) =>
       updateDepartment(id, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: DEPTS_KEY }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: DEPTS_KEY });
+      invalidateDutyCalc(qc);
+    },
   });
 };
 
@@ -64,7 +77,10 @@ export const useDeleteDepartment = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => deleteDepartment(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: DEPTS_KEY }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: DEPTS_KEY });
+      invalidateDutyCalc(qc);
+    },
   });
 };
 
@@ -84,6 +100,7 @@ export const useCreateSemester = (deptId: string) => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: semestersKey(deptId) });
       qc.invalidateQueries({ queryKey: deptStatsKey(deptId) });
+      invalidateDutyCalc(qc);
     },
   });
 };
@@ -96,6 +113,7 @@ export const useUpdateSemester = (deptId: string) => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: semestersKey(deptId) });
       qc.invalidateQueries({ queryKey: deptStatsKey(deptId) });
+      invalidateDutyCalc(qc);
     },
   });
 };
@@ -107,6 +125,7 @@ export const useDeleteSemester = (deptId: string) => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: semestersKey(deptId) });
       qc.invalidateQueries({ queryKey: deptStatsKey(deptId) });
+      invalidateDutyCalc(qc);
     },
   });
 };
@@ -136,7 +155,10 @@ export const useUpdateElectiveGroup = (semesterId: string) => {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<CreateElectiveGroupPayload> }) =>
       updateElectiveGroup(id, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: electiveGroupsKey(semesterId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: electiveGroupsKey(semesterId) });
+      invalidateDutyCalc(qc);
+    },
   });
 };
 
@@ -169,6 +191,7 @@ export const useCreateCourse = (semesterId: string, deptId: string) => {
       qc.invalidateQueries({ queryKey: coursesKey(semesterId) });
       qc.invalidateQueries({ queryKey: electiveGroupsKey(semesterId) });
       qc.invalidateQueries({ queryKey: deptStatsKey(deptId) });
+      invalidateDutyCalc(qc);
     },
   });
 };
@@ -182,6 +205,7 @@ export const useUpdateCourse = (semesterId: string, deptId: string) => {
       qc.invalidateQueries({ queryKey: coursesKey(semesterId) });
       qc.invalidateQueries({ queryKey: electiveGroupsKey(semesterId) });
       qc.invalidateQueries({ queryKey: deptStatsKey(deptId) });
+      invalidateDutyCalc(qc);
     },
   });
 };
@@ -194,6 +218,7 @@ export const useDeleteCourse = (semesterId: string, deptId: string) => {
       qc.invalidateQueries({ queryKey: coursesKey(semesterId) });
       qc.invalidateQueries({ queryKey: electiveGroupsKey(semesterId) });
       qc.invalidateQueries({ queryKey: deptStatsKey(deptId) });
+      invalidateDutyCalc(qc);
     },
   });
 };

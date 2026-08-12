@@ -7,15 +7,24 @@ import {
   removeRoom,
   applySharing,
   removeSharing,
+  setShareableMark,
+  addGlobalShared,
+  removeGlobalShared,
 } from "../../services/roomAllocationReducer";
 import { getRoomWarnings } from "../../selectors/roomAssignSelectors";
-import { buildAssignRoomsPayload } from "../../services/payloadBuilders";
+import {
+  buildAssignRoomsPayload,
+  buildShareableMarksPayload,
+  buildGlobalConsumptionsPayload,
+} from "../../services/payloadBuilders";
 import { finalizeSEEExam } from "../services/seeExamService";
 import type {
   DepartmentData,
   SlotAllocation,
   RoomInfo,
   SeatSharingPlanItem,
+  ShareableRoomMark,
+  GlobalSharedConsumption,
 } from "../../types";
 import type { SEERoutineEntry } from "../types";
 import { buildSEESlotAllocations } from "../utils/seeTransformUtils";
@@ -86,6 +95,27 @@ export function useSEERoomAssignment(args: {
     [],
   );
 
+  const handleSetShareableMark = useCallback(
+    (slotKey: string, deptId: string, mark: ShareableRoomMark | null) => {
+      setRoomState((prev) => setShareableMark(prev, slotKey, deptId, mark));
+    },
+    [],
+  );
+
+  const handleAddGlobalShared = useCallback(
+    (slotKey: string, deptId: string, consumption: GlobalSharedConsumption) => {
+      setRoomState((prev) => addGlobalShared(prev, slotKey, deptId, consumption));
+    },
+    [],
+  );
+
+  const handleRemoveGlobalShared = useCallback(
+    (slotKey: string, deptId: string, examRoomId: string) => {
+      setRoomState((prev) => removeGlobalShared(prev, slotKey, deptId, examRoomId));
+    },
+    [],
+  );
+
   const roomWarnings = useMemo(
     () => getRoomWarnings(roomState.slotAllocations),
     [roomState.slotAllocations],
@@ -106,6 +136,10 @@ export function useSEERoomAssignment(args: {
           endTime: r.endTime,
         })),
         roomAssignments: buildAssignRoomsPayload(roomState.slotAllocations),
+        shareableRoomMarks: buildShareableMarksPayload(roomState.slotAllocations),
+        globalSharedConsumptions: buildGlobalConsumptionsPayload(
+          roomState.slotAllocations,
+        ),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["shared", "exam-groups"] });
@@ -121,6 +155,9 @@ export function useSEERoomAssignment(args: {
     handleRemoveRoom,
     handleApplySharing,
     handleRemoveSharing,
+    handleSetShareableMark,
+    handleAddGlobalShared,
+    handleRemoveGlobalShared,
     finalize: finalizeMutation.mutate,
     isFinalizing: finalizeMutation.isPending,
     finalizeError: finalizeMutation.error,

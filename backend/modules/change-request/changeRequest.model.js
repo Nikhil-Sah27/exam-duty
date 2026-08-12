@@ -7,7 +7,7 @@ const changeRequestSchema = new mongoose.Schema(
     // change is the DCSGroup, never an individual classroom.
     scope: {
       type: String,
-      enum: ["duty", "dcs_group"],
+      enum: ["duty", "dcs_group", "rs_group"],
       default: "duty",
     },
     duty: {
@@ -30,6 +30,34 @@ const changeRequestSchema = new mongoose.Schema(
       ref: "DCSGroup",
       default: null,
     },
+    // RS group refs. Populated only when scope === "rs_group".
+    // RS groups are client-derived (chunks of 5 sorted rooms within
+    // schedule+building) — there's no persistent group document to reference.
+    // Instead we snapshot the concrete duties (source) and examRooms (target)
+    // that comprise each side, plus a deterministic key for the pending-swap
+    // uniqueness constraint.
+    rsSourceDuties: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Duty",
+      },
+    ],
+    rsTargetExamRooms: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "ExamRoom",
+      },
+    ],
+    rsSourceKey: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    rsTargetKey: {
+      type: String,
+      default: null,
+      trim: true,
+    },
     requestedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -38,7 +66,7 @@ const changeRequestSchema = new mongoose.Schema(
     type: {
       type: String,
       required: [true, "Request type is required"],
-      enum: ["swap", "drop", "move", "dcs_swap"],
+      enum: ["swap", "drop", "move", "dcs_swap", "rs_swap"],
     },
     reason: {
       type: String,
@@ -123,6 +151,17 @@ changeRequestSchema.index(
   {
     unique: true,
     partialFilterExpression: { status: "pending", scope: "dcs_group" },
+  }
+);
+
+// One pending RS swap per source group per teacher. rsSourceKey is a stable
+// composite of schedule + building + chunkIndex — unique per RS group even
+// though the group itself isn't a persistent document.
+changeRequestSchema.index(
+  { rsSourceKey: 1, requestedBy: 1, status: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { status: "pending", scope: "rs_group" },
   }
 );
 

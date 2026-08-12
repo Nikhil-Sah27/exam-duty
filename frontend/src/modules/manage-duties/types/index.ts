@@ -5,7 +5,7 @@ export interface Teacher {
   name: string;
   email: string;
   phone: string | null;
-  role: UserRole;
+  roles: UserRole[];
   department: string | null;
   designation: string | null;
   isActive: boolean;
@@ -13,8 +13,39 @@ export interface Teacher {
   updatedAt: string;
 }
 
+/**
+ * Populated exam-schedule ref returned by the backend when a duty was created
+ * via the new ExamGroup / ExamSchedule / ExamRoom flow. Legacy duties (from
+ * the older single-Exam controller path) have this as null; new duties have
+ * `exam: null` and populate this instead.
+ */
+export interface TeacherDutyExamSchedule {
+  _id: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  examGroup: {
+    _id: string;
+    examType: "IA1" | "IA2" | "IA3" | "SEE";
+    semester: number;
+  } | null;
+}
+
+export interface TeacherDutyExamRoom {
+  _id: string;
+  departments: string[];
+  room: {
+    _id: string;
+    roomNumber: string;
+    floor: number;
+    capacity: number;
+    building: { _id: string; name: string } | null;
+  } | null;
+}
+
 export interface TeacherDuty {
   _id: string;
+  /** Legacy exam ref — null for duties created via the ExamGroup flow. */
   exam: {
     _id: string;
     name: string;
@@ -22,7 +53,10 @@ export interface TeacherDuty {
     department: string;
     semester: number;
     type: string;
-  };
+  } | null;
+  /** New-flow refs — null for legacy duties. */
+  examSchedule: TeacherDutyExamSchedule | null;
+  examRoom: TeacherDutyExamRoom | null;
   teacher: {
     _id: string;
     name: string;
@@ -49,15 +83,6 @@ export interface TeacherWithStats extends Teacher {
     completed: number;
     total: number;
   };
-}
-
-export interface AssignDutyPayload {
-  exam: string;
-  teacher: string;
-  room: string;
-  date: string;
-  startTime: string;
-  endTime: string;
 }
 
 export interface TeacherFilters {

@@ -68,7 +68,9 @@ export const ROLE_ID_PREFIX: Record<OperationalRoleKey, string> = SHORT_ROLE_LAB
 export function getTeacherDisplayId(teacher: AssigneePublic | null | undefined): string | null {
   if (!teacher) return null;
   const tail = String(teacher._id).slice(-6).toUpperCase();
-  const role = (teacher.role as OperationalRoleKey) || "invigilator";
+  // AssigneePublic now exposes a `roles` array. Take the first duty-eligible
+  // role for the ID prefix — this is only used cosmetically in tooltips.
+  const role = ((teacher.roles || []).find((r) => r !== "cs") as OperationalRoleKey) || "invigilator";
   const prefix = SHORT_ROLE_LABEL[role] || "USR";
   return `${prefix}-${tail}`;
 }

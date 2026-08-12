@@ -108,6 +108,9 @@ export default function SEEExamSetupPage() {
         onRemoveRoom={roomAssignment.handleRemoveRoom}
         onApplySharing={roomAssignment.handleApplySharing}
         onRemoveSharing={roomAssignment.handleRemoveSharing}
+        onSetShareableMark={roomAssignment.handleSetShareableMark}
+        onAddGlobalShared={roomAssignment.handleAddGlobalShared}
+        onRemoveGlobalShared={roomAssignment.handleRemoveGlobalShared}
         onAssignRooms={handleFinalizeExam}
         onPrev={() => setPhase("routine")}
       />

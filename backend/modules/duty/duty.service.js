@@ -16,7 +16,13 @@ const ROLE_LABELS = {
   invigilator: "invigilator",
 };
 
-const validateConflicts = async (teacherId, room, date, startTime, endTime, excludeId) => {
+// The `role` param identifies which slot is being filled (dcs / rs / invigilator).
+// It is REQUIRED — a room can host all three role slots concurrently, so the
+// conflict scan is meaningless without it.
+const validateConflicts = async (teacherId, room, date, startTime, endTime, excludeId, roomRef, role) => {
+  if (!role) {
+    throw new AppError("Internal: role is required for conflict validation", 500);
+  }
   const teacherConflict = await dutyRepository.findTeacherConflict(
     teacherId, date, startTime, endTime, excludeId
   );
@@ -27,22 +33,45 @@ const validateConflicts = async (teacherId, room, date, startTime, endTime, excl
     );
   }
 
-  // Look up the caller's role so the room-conflict scan is scoped to the
-  // SAME role slot. Without this, a DCS-assigned room would block an
-  // invigilator from claiming the (independent) invigilator slot.
-  const teacher = await User.findById(teacherId).select("role");
-  const role = teacher?.role || null;
-
   const roomConflict = await dutyRepository.findRoomConflict(
-    room, date, startTime, endTime, role, excludeId
+    room, date, startTime, endTime, role, excludeId, roomRef
   );
   if (roomConflict) {
-    const conflictingRole = ROLE_LABELS[roomConflict.teacher?.role] || "another teacher";
+    const conflictingRole = ROLE_LABELS[roomConflict.role] || "another teacher";
     throw new AppError(
       `Room ${room} is already assigned to another ${conflictingRole} from ${roomConflict.startTime}–${roomConflict.endTime} on this date`,
       409
     );
   }
+};
+
+// Resolve which role slot a duty is being claimed for.
+//   • self-assign: the caller's activeRole is the slot (validated against roles)
+//   • admin-assign: the caller supplies `role` in body (validated against the
+//     teacher's roles), falling back to the teacher's only role when unambiguous
+const resolveRoleForAssignment = async (teacherId, callerActiveRole, requestedRole, isSelfAssigned) => {
+  const teacher = await User.findById(teacherId).select("roles");
+  if (!teacher) throw new AppError("Teacher not found", 404);
+  const teacherRoles = (teacher.roles || []).filter((r) => r !== "cs"); // CS can't hold duty slots
+
+  const desiredRole = isSelfAssigned ? callerActiveRole : (requestedRole || null);
+  if (!desiredRole) {
+    // Admin assigning without specifying a role — only unambiguous when the
+    // teacher has exactly one duty-eligible role.
+    if (teacherRoles.length === 1) return teacherRoles[0];
+    throw new AppError(
+      "Teacher has multiple roles — specify `role` on the assignment",
+      400
+    );
+  }
+
+  if (!teacherRoles.includes(desiredRole)) {
+    throw new AppError(
+      `Teacher does not have role "${desiredRole}"`,
+      400
+    );
+  }
+  return desiredRole;
 };
 
 const validateExam = async (examId) => {
@@ -132,27 +161,27 @@ const validateTimeRange = (startTime, endTime) => {
  *             `startTime`, `endTime` are derived from the resolved schedule
  *             + examRoom and do not need to be sent.
  */
-const assignDuty = async (data, assignedById, isSelfAssigned) => {
-  const { exam: examId, examSchedule, examRoom, teacher: teacherId } = data;
+const assignDuty = async (data, assignedById, isSelfAssigned, callerActiveRole) => {
+  const { exam: examId, examSchedule, examRoom, teacher: teacherId, role: requestedRole } = data;
 
   let scheduleRef = null;
   let examRoomRef = null;
+  let roomRef = null;
   let room = data.room;
   let date = data.date;
   let startTime = data.startTime;
   let endTime = data.endTime;
 
   if (examSchedule || examRoom) {
-    // New shape: ScheduleSlot path
     const resolved = await validateScheduleSlot(examSchedule, examRoom);
     scheduleRef = resolved.schedule._id;
     examRoomRef = resolved.examRoom._id;
+    roomRef = resolved.examRoom?.room?._id || null;
     room = resolved.examRoom?.room?.roomNumber || "";
     date = resolved.schedule.date;
     startTime = resolved.schedule.startTime;
     endTime = resolved.schedule.endTime;
   } else if (examId) {
-    // Legacy shape: Exam path
     await validateExam(examId);
   } else {
     throw new AppError(
@@ -163,7 +192,8 @@ const assignDuty = async (data, assignedById, isSelfAssigned) => {
 
   validateTimeRange(startTime, endTime);
   await validateTeacher(teacherId);
-  await validateConflicts(teacherId, room, date, startTime, endTime);
+  const dutyRole = await resolveRoleForAssignment(teacherId, callerActiveRole, requestedRole, isSelfAssigned);
+  await validateConflicts(teacherId, room, date, startTime, endTime, undefined, roomRef, dutyRole);
 
   const duty = await withOptionalTransaction((session) =>
     dutyRepository.create(
@@ -172,7 +202,9 @@ const assignDuty = async (data, assignedById, isSelfAssigned) => {
         examSchedule: scheduleRef,
         examRoom: examRoomRef,
         teacher: teacherId,
+        role: dutyRole,
         room,
+        roomRef,
         date,
         startTime,
         endTime,
@@ -197,8 +229,8 @@ const assignDuty = async (data, assignedById, isSelfAssigned) => {
   return populated;
 };
 
-const selfAssignDuty = async (data, userId) => {
-  return assignDuty({ ...data, teacher: userId }, userId, true);
+const selfAssignDuty = async (data, userId, activeRole) => {
+  return assignDuty({ ...data, teacher: userId }, userId, true, activeRole);
 };
 
 /**
@@ -213,8 +245,11 @@ const selfAssignDuty = async (data, userId) => {
  * deployment supports transactions. On standalone Mongo, partial state is
  * possible — same trade-off as elsewhere in the service.
  */
-const selfAssignDutyGroup = async (data, userId) => {
+const selfAssignDutyGroup = async (data, userId, activeRole) => {
   const { examSchedule, examRooms } = data;
+  if (!activeRole || activeRole === "cs" || activeRole === "invigilator") {
+    throw new AppError("selfAssignGroup is only valid for DCS and RS active roles", 400);
+  }
 
   if (!examSchedule) throw new AppError("examSchedule is required", 400);
   if (!Array.isArray(examRooms) || examRooms.length === 0) {
@@ -249,20 +284,24 @@ const selfAssignDutyGroup = async (data, userId) => {
   // specific room rather than "transaction aborted".
   for (const { examRoom } of resolved) {
     const roomNumber = examRoom?.room?.roomNumber || "";
-    await validateConflicts(userId, roomNumber, date, startTime, endTime);
+    const roomRef = examRoom?.room?._id || null;
+    await validateConflicts(userId, roomNumber, date, startTime, endTime, undefined, roomRef, activeRole);
   }
 
   const createdIds = await withOptionalTransaction(async (session) => {
     const ids = [];
     for (const { schedule: s, examRoom } of resolved) {
       const roomNumber = examRoom?.room?.roomNumber || "";
+      const roomRef = examRoom?.room?._id || null;
       const duty = await dutyRepository.create(
         {
           exam: null,
           examSchedule: s._id,
           examRoom: examRoom._id,
           teacher: userId,
+          role: activeRole,
           room: roomNumber,
+          roomRef,
           date: s.date,
           startTime: s.startTime,
           endTime: s.endTime,
@@ -284,7 +323,7 @@ const selfAssignDutyGroup = async (data, userId) => {
 
 const adminAssignDuty = async (data, adminId) => {
   if (!data.teacher) throw new AppError("Teacher ID is required for admin assignment", 400);
-  return assignDuty(data, adminId, false);
+  return assignDuty(data, adminId, false, null);
 };
 
 const getAllDuties = async (query) => {

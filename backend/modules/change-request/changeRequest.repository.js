@@ -59,6 +59,45 @@ const POPULATE_DEEP = [
   // review screen and the requester's history can render without further reads.
   { path: "dcsSourceGroup", ...DCS_GROUP_POPULATE },
   { path: "dcsTargetGroup", ...DCS_GROUP_POPULATE },
+  // RS scope refs. Client-derived groups → we snapshot the actual duties
+  // (source side) and examRooms (target side); populate both so the UI can
+  // render the source and target as complete group cards.
+  {
+    path: "rsSourceDuties",
+    select: "room date startTime endTime status examSchedule examRoom",
+    populate: [
+      {
+        path: "examSchedule",
+        select: "date startTime endTime examGroup",
+        populate: { path: "examGroup", select: "examType semester" },
+      },
+      {
+        path: "examRoom",
+        select: "room departments",
+        populate: {
+          path: "room",
+          select: "roomNumber floor capacity building",
+          populate: { path: "building", select: "name" },
+        },
+      },
+    ],
+  },
+  {
+    path: "rsTargetExamRooms",
+    select: "room departments schedule",
+    populate: [
+      {
+        path: "room",
+        select: "roomNumber floor capacity building",
+        populate: { path: "building", select: "name" },
+      },
+      {
+        path: "schedule",
+        select: "date startTime endTime examGroup",
+        populate: { path: "examGroup", select: "examType semester" },
+      },
+    ],
+  },
 ];
 
 const create = (data) => {
@@ -88,6 +127,15 @@ const findPendingDcsByUserAndSource = (sourceGroupId, userId) => {
   return ChangeRequest.findOne({
     scope: "dcs_group",
     dcsSourceGroup: sourceGroupId,
+    requestedBy: userId,
+    status: "pending",
+  });
+};
+
+const findPendingRsByUserAndSourceKey = (rsSourceKey, userId) => {
+  return ChangeRequest.findOne({
+    scope: "rs_group",
+    rsSourceKey,
     requestedBy: userId,
     status: "pending",
   });
@@ -125,6 +173,7 @@ module.exports = {
   findById,
   findPendingByDutyAndUser,
   findPendingDcsByUserAndSource,
+  findPendingRsByUserAndSourceKey,
   updateById,
   findOpenByDutyIds,
   updateManyByIds,

@@ -24,6 +24,7 @@ const { notifyReleasedDuties } = require("./notificationCleanupService");
 const { cancelRequestsForDuties } = require("./changeRequestCleanupService");
 
 const auditService = require("../../audit/audit.service");
+const seatSharingService = require("../../seat-sharing/seatSharing.service");
 
 const {
   getCascadeScopeForGroup,
@@ -44,7 +45,9 @@ const summarizeCascade = (duties) => {
     teacherById.set(key, {
       teacherId: tid,
       name: d.teacher?.name || null,
-      role: d.teacher?.role || null,
+      // The role slot this duty filled — unambiguous even when the teacher
+      // holds multiple roles (rs + invigilator).
+      role: d.role || null,
     });
   }
   const affectedTeachers = [...teacherById.values()];
@@ -148,6 +151,19 @@ const deleteExamGroupWithCleanup = async (
       affectedExamRooms: scope.examRoomIds,
     },
     finalize: async (session) => {
+      // Seat-sharing cascade: run BEFORE ExamRoom.deleteMany so we can
+      // (a) restore seats to source configs the deleted group borrowed from,
+      // and (b) delete configs this group owned (plus their dependent
+      // consumer allocations, which will no longer have a source room).
+      await seatSharingService.releaseAllocationsByConsumerGroup({
+        consumerExamGroupId: groupId,
+        session,
+      });
+      await seatSharingService.releaseAllocationsBySourceGroup({
+        sourceExamGroupId: groupId,
+        session,
+      });
+
       // DCS groups belong to the exam-group lifecycle — drop them alongside
       // schedules/rooms. Any duties they generated were already released by
       // the cascade above via the Duty refs in scope.duties.
@@ -196,6 +212,20 @@ const deleteScheduleWithCleanup = async (
       affectedExamRooms: scope.examRoomIds,
     },
     finalize: async (session) => {
+      // Seat-sharing cascade for a schedule delete: restore seats for
+      // allocations where this schedule was the consumer, and drop
+      // configs+allocations for each ExamRoom of this schedule as a source.
+      await seatSharingService.releaseByConsumerSchedule({
+        consumerScheduleId: scheduleId,
+        session,
+      });
+      for (const erId of scope.examRoomIds) {
+        await seatSharingService.releaseByExamRoomAsSource({
+          examRoomId: erId,
+          session,
+        });
+      }
+
       await dcsGroupRepository.deleteBySchedules([scheduleId], session);
       if (scope.examRoomIds.length > 0) {
         await ExamRoom.deleteMany(
@@ -230,6 +260,13 @@ const deleteExamRoomWithCleanup = async (
     ipAddress,
     details: { scope: "exam_room" },
     finalize: async (session) => {
+      // Seat-sharing cascade: this specific room is going away, so its
+      // sharing config and any consumer allocations sourced from it die too.
+      await seatSharingService.releaseByExamRoomAsSource({
+        examRoomId,
+        session,
+      });
+
       await ExamRoom.findByIdAndDelete(
         examRoomId,
         session ? { session } : {},

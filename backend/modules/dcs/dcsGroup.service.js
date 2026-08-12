@@ -194,7 +194,7 @@ const validateDcsUser = async (userId) => {
   const user = await User.findById(userId);
   if (!user) throw new AppError("User not found", 404);
   if (!user.isActive) throw new AppError("Account is deactivated", 400);
-  if (user.role !== "dcs") {
+  if (!(user.roles || []).includes("dcs")) {
     throw new AppError("Only DCS users can claim DCS groups", 403);
   }
   return user;
@@ -259,13 +259,16 @@ const claimGroup = async (groupId, userId) => {
     const dutyIds = [];
     for (const examRoom of fresh.assignedRooms) {
       const roomNumber = examRoom?.room?.roomNumber || "";
+      const roomRef = examRoom?.room?._id || null;
       const duty = await dutyRepository.create(
         {
           exam: null,
           examSchedule: fresh.schedule._id,
           examRoom: examRoom._id,
           teacher: userId,
+          role: "dcs",
           room: roomNumber,
+          roomRef,
           date: fresh.schedule.date,
           startTime: fresh.schedule.startTime,
           endTime: fresh.schedule.endTime,
@@ -354,14 +357,15 @@ const getRoomInvigilators = async (groupId) => {
       examRoom: examRoom._id,
       status: "assigned",
     })
-      .populate("teacher", "name email phone role department");
+      .populate("teacher", "name email phone roles department");
 
     // The same examRoom can have RS + Invigilator + DCS duties — surface only
     // invigilators (the people physically watching this room). RS coverage is
     // visible elsewhere; DCS is the current user.
     const invigilators = duties
+      .filter((d) => d.role === "invigilator")
       .map((d) => d.teacher)
-      .filter((t) => t && t.role === "invigilator");
+      .filter(Boolean);
 
     result.push({
       examRoomId: examRoom._id,

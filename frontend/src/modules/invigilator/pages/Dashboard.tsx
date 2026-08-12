@@ -7,6 +7,7 @@ import {
   normalizeDutiesCompleted,
   normalizeDutiesUpcoming,
 } from "@/modules/shared/dashboard/utils/dashboardNormalizers";
+import DutyStatisticsWidget from "@/modules/duty-calculation/components/DutyStatisticsWidget";
 
 /**
  * Invigilator dashboard. Same layout contract as RS/DCS dashboards —
@@ -49,6 +50,8 @@ export default function Dashboard() {
           href: "/invigilator/upcoming-duties",
         }}
       />
+
+      <DutyStatisticsWidget />
 
       {dutiesQuery.isLoading && (
         <p className="text-sm text-gray-500">Loading your duties...</p>

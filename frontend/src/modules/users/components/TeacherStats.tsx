@@ -7,9 +7,9 @@ interface TeacherStatsProps {
 
 export default function TeacherStats({ users }: TeacherStatsProps) {
   const total = users.length;
-  const invigilators = users.filter((u) => u.role === "invigilator").length;
-  const dcs = users.filter((u) => u.role === "dcs").length;
-  const rs = users.filter((u) => u.role === "rs").length;
+  const invigilators = users.filter((u) => u.roles?.includes("invigilator")).length;
+  const dcs = users.filter((u) => u.roles?.includes("dcs")).length;
+  const rs = users.filter((u) => u.roles?.includes("rs")).length;
 
   const stats = [
     { label: "Total Teachers", value: total, icon: Users, color: "text-gray-700", bg: "bg-gray-100" },

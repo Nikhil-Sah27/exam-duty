@@ -26,6 +26,9 @@ const invalidateAll = (qc: ReturnType<typeof useQueryClient>) => {
   // DCS group swaps move whole groups between teachers — invalidate the
   // group caches the DCS dashboard, Upcoming Duties, and Select Duty share.
   qc.invalidateQueries({ queryKey: ["dcs"] });
+  // Any approved/rejected request changes an invigilator's completed count —
+  // refresh the duty-target widget on the next render.
+  qc.invalidateQueries({ queryKey: ["duty-calculation"] });
 };
 
 export function useAllChangeRequests(status?: ChangeRequestStatus) {

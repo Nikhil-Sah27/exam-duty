@@ -130,6 +130,7 @@ export function useRSDutySelection() {
       queryClient.invalidateQueries({ queryKey: ["shared", "exam-groups"] });
       queryClient.invalidateQueries({ queryKey: ["shared", "duty-status"] });
       queryClient.invalidateQueries({ queryKey: ["shared", "duties-by-teacher"] });
+      queryClient.invalidateQueries({ queryKey: ["duty-calculation"] });
     },
   });
 

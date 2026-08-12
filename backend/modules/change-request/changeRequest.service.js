@@ -13,7 +13,7 @@ const { emit, emitToMany } = require("../notification/notification.emitter");
 // ---------- Helpers ----------
 
 const getAdminIds = async () => {
-  const admins = await User.find({ role: { $in: ["cs", "dcs"] }, isActive: true }).select("_id");
+  const admins = await User.find({ roles: { $in: ["cs", "dcs"] }, isActive: true }).select("_id");
   return admins.map((a) => a._id);
 };
 
@@ -37,23 +37,28 @@ const sameDay = (a, b) => {
   return da.getTime() === db.getTime();
 };
 
-const isInvigilatorAlreadyAssigned = async (date, startTime, endTime, roomNumber, roomId) => {
-  // Mirror the matching logic used in examGroup.service.getDutyStatus: room is
-  // stored as string on Duty, can match either roomNumber or roomId.
+const isInvigilatorAlreadyAssigned = async (date, startTime, endTime, roomNumber, roomId, roomRef) => {
+  // Prefer scoping by the physical Room _id (building-aware). Only fall back
+  // to the legacy string `room` field for very old duties without roomRef.
   const day = new Date(date);
   day.setHours(0, 0, 0, 0);
   const nextDay = new Date(day);
   nextDay.setDate(nextDay.getDate() + 1);
 
-  const duties = await Duty.find({
+  const filter = {
     date: { $gte: day, $lt: nextDay },
     startTime,
     endTime,
     status: "assigned",
-    $or: [{ room: roomNumber }, { room: roomId }],
-  }).populate("teacher", "role");
+  };
+  if (roomRef) {
+    filter.roomRef = roomRef;
+  } else {
+    filter.$or = [{ room: roomNumber }, { room: roomId }];
+  }
+  const duties = await Duty.find(filter);
 
-  return duties.some((d) => d.teacher && d.teacher.role === "invigilator");
+  return duties.some((d) => d.role === "invigilator");
 };
 
 const validateMoveTarget = async ({ requestedSchedule, requestedExamRoom, userId, currentDutyId }) => {
@@ -202,15 +207,253 @@ const submitDcsGroupSwap = async (
   return request;
 };
 
+// ---------- RS group swap submit ----------
+
+/**
+ * Compute a deterministic composite key for an RS group given its schedule +
+ * building + chunkIndex. Mirrors the frontend groupId format so pending-swap
+ * uniqueness on (rsSourceKey, requester) matches the RS's own mental model
+ * of "one group card = one swap in flight."
+ */
+const buildRsGroupKey = (scheduleId, buildingId, chunkIndex) =>
+  `${scheduleId}:${buildingId}:${chunkIndex}`;
+
+/**
+ * Validate an RS group swap submission and persist it. Source is described by
+ * the set of duty IDs the RS currently holds in that group; target by the
+ * examRoom IDs of the group they'd like to move to. All source duties must
+ * belong to the caller, all target examRooms must share one schedule +
+ * building, and the target must be free of RS assignments today.
+ */
+const submitRsGroupSwap = async (
+  {
+    rsSourceDuties,
+    rsTargetExamRooms,
+    rsSourceKey,
+    rsTargetKey,
+    reason,
+  },
+  userId
+) => {
+  if (!Array.isArray(rsSourceDuties) || rsSourceDuties.length === 0) {
+    throw new AppError("Source group duties are required", 400);
+  }
+  if (!Array.isArray(rsTargetExamRooms) || rsTargetExamRooms.length === 0) {
+    throw new AppError("Target group rooms are required", 400);
+  }
+  if (!rsSourceKey || !rsTargetKey) {
+    throw new AppError("Source and target group keys are required", 400);
+  }
+  if (rsSourceKey === rsTargetKey) {
+    throw new AppError("Source and target groups must differ", 400);
+  }
+
+  // ── 1. Validate source ─────────────────────────────────────────────────
+  const sourceDuties = await Duty.find({ _id: { $in: rsSourceDuties } })
+    .populate({
+      path: "examSchedule",
+      select: "date startTime endTime",
+    })
+    .populate({
+      path: "examRoom",
+      select: "room",
+      populate: { path: "room", select: "building" },
+    });
+
+  if (sourceDuties.length !== rsSourceDuties.length) {
+    throw new AppError("One or more source duties no longer exist", 404);
+  }
+  for (const d of sourceDuties) {
+    if (String(d.teacher) !== String(userId)) {
+      throw new AppError("You can only swap groups you own", 403);
+    }
+    if (d.status !== "assigned") {
+      throw new AppError(
+        "One or more source duties are no longer assigned",
+        400
+      );
+    }
+  }
+
+  // Source must be a single group — same schedule + same building.
+  const sourceScheduleId = String(sourceDuties[0].examSchedule?._id);
+  const sourceBuildingId = String(
+    sourceDuties[0].examRoom?.room?.building?._id ||
+      sourceDuties[0].examRoom?.room?.building ||
+      ""
+  );
+  for (const d of sourceDuties) {
+    const sid = String(d.examSchedule?._id);
+    const bid = String(
+      d.examRoom?.room?.building?._id || d.examRoom?.room?.building || ""
+    );
+    if (sid !== sourceScheduleId || bid !== sourceBuildingId) {
+      throw new AppError(
+        "Source duties must all belong to the same group (same schedule + building)",
+        400
+      );
+    }
+  }
+
+  // ── 2. Validate target ────────────────────────────────────────────────
+  const targetExamRooms = await examRoomRepo.findManyByIds(rsTargetExamRooms);
+  if (targetExamRooms.length !== rsTargetExamRooms.length) {
+    throw new AppError("One or more target rooms no longer exist", 404);
+  }
+
+  const targetScheduleId = String(targetExamRooms[0].schedule?._id || targetExamRooms[0].schedule);
+  const targetBuildingId = String(
+    targetExamRooms[0].room?.building?._id || targetExamRooms[0].room?.building || ""
+  );
+  for (const er of targetExamRooms) {
+    const sid = String(er.schedule?._id || er.schedule);
+    const bid = String(er.room?.building?._id || er.room?.building || "");
+    if (sid !== targetScheduleId || bid !== targetBuildingId) {
+      throw new AppError(
+        "Target rooms must all belong to the same group (same schedule + building)",
+        400
+      );
+    }
+  }
+
+  const targetSchedule = await examScheduleRepo.findById(targetScheduleId);
+  if (!targetSchedule) throw new AppError("Target schedule not found", 404);
+
+  // Target date must be in the future (same rule as select-duty).
+  const now = new Date();
+  const day = new Date(targetSchedule.date);
+  day.setHours(0, 0, 0, 0);
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  if (day < today) {
+    throw new AppError("Target schedule has already passed", 400);
+  }
+
+  // Every target room must be free of an RS duty right now.
+  const teacher = await User.findById(userId).select("role");
+  if (!teacher) throw new AppError("Requester not found", 404);
+  const sourceDutyIds = sourceDuties.map((d) => String(d._id));
+
+  for (const er of targetExamRooms) {
+    const roomRef = er.room?._id || er.room || null;
+    const dayStart = new Date(targetSchedule.date);
+    dayStart.setHours(0, 0, 0, 0);
+    const nextDay = new Date(dayStart);
+    nextDay.setDate(nextDay.getDate() + 1);
+    const filter = {
+      date: { $gte: dayStart, $lt: nextDay },
+      startTime: targetSchedule.startTime,
+      endTime: targetSchedule.endTime,
+      status: "assigned",
+      _id: { $nin: sourceDutyIds },
+    };
+    if (roomRef) filter.roomRef = roomRef;
+    else filter.room = er.room?.roomNumber || "";
+    const conflicts = await Duty.find(filter);
+    if (conflicts.some((c) => c.role === "rs")) {
+      throw new AppError(
+        "One or more target rooms already have an RS assigned",
+        409
+      );
+    }
+  }
+
+  // Requester must not have OTHER duties (outside source) that clash with
+  // the target's time window on the target date.
+  const otherDuties = await Duty.find({
+    teacher: userId,
+    status: "assigned",
+    _id: { $nin: sourceDutyIds },
+  });
+  for (const d of otherDuties) {
+    if (!sameDay(d.date, targetSchedule.date)) continue;
+    if (
+      overlaps(
+        d.startTime,
+        d.endTime,
+        targetSchedule.startTime,
+        targetSchedule.endTime
+      )
+    ) {
+      throw new AppError(
+        `Time conflict with your duty at ${d.room} (${d.startTime}–${d.endTime}) on the target date`,
+        409
+      );
+    }
+  }
+
+  // ── 3. Enforce single pending swap per source group ───────────────────
+  const existing =
+    await changeRequestRepository.findPendingRsByUserAndSourceKey(
+      rsSourceKey,
+      userId
+    );
+  if (existing) {
+    throw new AppError(
+      "You already have a pending swap for this RS group",
+      409
+    );
+  }
+
+  // ── 4. Persist ─────────────────────────────────────────────────────────
+  const request = await changeRequestRepository.create({
+    scope: "rs_group",
+    type: "rs_swap",
+    requestedBy: userId,
+    reason,
+    rsSourceDuties,
+    rsTargetExamRooms,
+    rsSourceKey,
+    rsTargetKey,
+  });
+
+  const adminIds = await getAdminIds();
+  emitToMany("request_submitted", {
+    recipients: adminIds,
+    refModel: "ChangeRequest",
+    refId: request._id,
+    data: { type: "RS swap", date: targetSchedule.date },
+  });
+
+  return request;
+};
+
 // ---------- Submit ----------
 
 const submitRequest = async (
-  { duty: dutyId, type, reason, swapWith, requestedSchedule, requestedExamRoom, dcsSourceGroup, dcsTargetGroup },
+  {
+    duty: dutyId,
+    type,
+    reason,
+    swapWith,
+    requestedSchedule,
+    requestedExamRoom,
+    dcsSourceGroup,
+    dcsTargetGroup,
+    rsSourceDuties,
+    rsTargetExamRooms,
+    rsSourceKey,
+    rsTargetKey,
+  },
   userId
 ) => {
   // DCS group swap fork — uses different identifiers, so route early.
   if (type === "dcs_swap") {
     return submitDcsGroupSwap({ dcsSourceGroup, dcsTargetGroup, reason }, userId);
+  }
+
+  // RS group swap fork — mirrors DCS but on client-derived groups.
+  if (type === "rs_swap") {
+    return submitRsGroupSwap(
+      {
+        rsSourceDuties,
+        rsTargetExamRooms,
+        rsSourceKey,
+        rsTargetKey,
+        reason,
+      },
+      userId
+    );
   }
 
   const duty = await Duty.findById(dutyId);
@@ -263,7 +506,8 @@ const submitRequest = async (
       schedule.startTime,
       schedule.endTime,
       examRoom?.room?.roomNumber || "",
-      examRoom?.room?._id?.toString() || ""
+      examRoom?.room?._id?.toString() || "",
+      examRoom?.room?._id || null
     );
     if (alreadyTaken) {
       throw new AppError("Target slot already has an invigilator assigned", 409);
@@ -383,13 +627,16 @@ const approveDcsGroupSwap = async (request, reviewerId, reviewNote) => {
     const newDutyIds = [];
     for (const examRoom of target.assignedRooms) {
       const roomNumber = examRoom?.room?.roomNumber || "";
+      const roomRef = examRoom?.room?._id || null;
       const duty = await dutyRepository.create(
         {
           exam: null,
           examSchedule: target.schedule._id,
           examRoom: examRoom._id,
           teacher: requesterId,
+          role: "dcs",
           room: roomNumber,
+          roomRef,
           date: target.schedule.date,
           startTime: target.schedule.startTime,
           endTime: target.schedule.endTime,
@@ -424,6 +671,134 @@ const approveDcsGroupSwap = async (request, reviewerId, reviewNote) => {
   return updated;
 };
 
+// ---------- RS group swap approve ----------
+
+/**
+ * Approve an RS group swap: atomically cancel the requester's source-group
+ * duties and create fresh duties on every examRoom in the target group.
+ * Mirrors approveDcsGroupSwap in structure; the difference is that RS groups
+ * are described by concrete duty + examRoom snapshots rather than a
+ * persistent group document.
+ */
+const approveRsGroupSwap = async (request, reviewerId, reviewNote) => {
+  const requesterId = request.requestedBy._id || request.requestedBy;
+
+  // Refresh source duties — they're stored fully populated on the request,
+  // but we need live status to avoid overwriting an admin-side cancellation.
+  const sourceDuties = await Duty.find({
+    _id: { $in: (request.rsSourceDuties || []).map((d) => d._id || d) },
+  });
+  if (sourceDuties.length === 0) {
+    throw new AppError("Source RS group no longer exists", 404);
+  }
+  for (const d of sourceDuties) {
+    if (String(d.teacher) !== String(requesterId)) {
+      throw new AppError(
+        "Source group is no longer owned by the requester",
+        409
+      );
+    }
+    if (d.status !== "assigned") {
+      throw new AppError("One or more source duties are already cancelled", 409);
+    }
+  }
+
+  // Refresh target examRooms and confirm none has been claimed by another RS
+  // since the request was filed.
+  const targetIds = (request.rsTargetExamRooms || []).map((r) => r._id || r);
+  const targetExamRooms = await examRoomRepo.findManyByIds(targetIds);
+  if (targetExamRooms.length !== targetIds.length) {
+    throw new AppError("One or more target rooms no longer exist", 404);
+  }
+
+  const targetScheduleId = String(
+    targetExamRooms[0].schedule?._id || targetExamRooms[0].schedule
+  );
+  const targetSchedule = await examScheduleRepo.findById(targetScheduleId);
+  if (!targetSchedule) throw new AppError("Target schedule not found", 404);
+
+  const sourceDutyIds = sourceDuties.map((d) => String(d._id));
+  for (const er of targetExamRooms) {
+    const roomRef = er.room?._id || er.room || null;
+    const dayStart = new Date(targetSchedule.date);
+    dayStart.setHours(0, 0, 0, 0);
+    const nextDay = new Date(dayStart);
+    nextDay.setDate(nextDay.getDate() + 1);
+    const filter = {
+      date: { $gte: dayStart, $lt: nextDay },
+      startTime: targetSchedule.startTime,
+      endTime: targetSchedule.endTime,
+      status: "assigned",
+      _id: { $nin: sourceDutyIds },
+    };
+    if (roomRef) filter.roomRef = roomRef;
+    else filter.room = er.room?.roomNumber || "";
+    const conflicts = await Duty.find(filter);
+    if (conflicts.some((c) => c.role === "rs")) {
+      return changeRequestRepository.updateById(request._id, {
+        status: "rejected",
+        reviewedBy: reviewerId,
+        reviewedAt: new Date(),
+        reviewNote: "Target RS group is no longer available.",
+      });
+    }
+  }
+
+  const updated = await withOptionalTransaction(async (session) => {
+    const sessionOpt = session ? { session } : undefined;
+
+    // ── 1. Cancel source-group duties ──────────────────────────────────
+    await Duty.updateMany(
+      { _id: { $in: sourceDutyIds } },
+      {
+        status: "cancelled",
+        cancelledAt: new Date(),
+        cancelReason: "Approved RS swap",
+      },
+      sessionOpt
+    );
+
+    // ── 2. Create target-group duties ──────────────────────────────────
+    for (const examRoom of targetExamRooms) {
+      const roomNumber = examRoom?.room?.roomNumber || "";
+      const roomRef = examRoom?.room?._id || null;
+      await dutyRepository.create(
+        {
+          exam: null,
+          examSchedule: targetSchedule._id,
+          examRoom: examRoom._id,
+          teacher: requesterId,
+          role: "rs",
+          room: roomNumber,
+          roomRef,
+          date: targetSchedule.date,
+          startTime: targetSchedule.startTime,
+          endTime: targetSchedule.endTime,
+          assignedBy: reviewerId,
+          isSelfAssigned: false,
+        },
+        session
+      );
+    }
+
+    return changeRequestRepository.updateById(request._id, {
+      status: "approved",
+      reviewedBy: reviewerId,
+      reviewedAt: new Date(),
+      reviewNote: reviewNote || null,
+    });
+  });
+
+  emit("request_approved", {
+    recipient: requesterId,
+    refModel: "ChangeRequest",
+    refId: request._id,
+    data: { type: "RS swap", reviewNote },
+  });
+
+  return updated;
+};
+
 // ---------- Approve ----------
 
 const approveRequest = async (id, reviewerId, reviewNote) => {
@@ -439,6 +814,11 @@ const approveRequest = async (id, reviewerId, reviewNote) => {
     return approveDcsGroupSwap(request, reviewerId, reviewNote);
   }
 
+  // RS group swap follows the same "bundle" shape.
+  if (request.scope === "rs_group") {
+    return approveRsGroupSwap(request, reviewerId, reviewNote);
+  }
+
   // Move requests need a vacancy re-check BEFORE we start mutating. If the
   // target slot was claimed since the request was filed, auto-reject with a
   // clear note and exit early — no transaction required.
@@ -448,7 +828,8 @@ const approveRequest = async (id, reviewerId, reviewNote) => {
       request.requestedStartTime,
       request.requestedEndTime,
       request.requestedRoom,
-      ""
+      "",
+      request.requestedExamRoom?.room?._id || request.requestedExamRoom?.room || null
     ));
     if (!stillVacant) {
       return changeRequestRepository.updateById(id, {
@@ -496,6 +877,11 @@ const approveRequest = async (id, reviewerId, reviewNote) => {
         sessionOpt
       );
 
+      const requestedRoomRef =
+        request.requestedExamRoom?.room?._id ||
+        request.requestedExamRoom?.room ||
+        null;
+
       await Duty.create(
         [
           {
@@ -503,7 +889,9 @@ const approveRequest = async (id, reviewerId, reviewNote) => {
             examSchedule: request.requestedSchedule,
             examRoom: request.requestedExamRoom,
             teacher: oldDuty.teacher,
+            role: oldDuty.role || "invigilator",
             room: request.requestedRoom,
+            roomRef: requestedRoomRef,
             date: request.requestedDate,
             startTime: request.requestedStartTime,
             endTime: request.requestedEndTime,
@@ -643,7 +1031,8 @@ const getAvailableReplacements = async (dutyId, userId) => {
           schedule.startTime,
           schedule.endTime,
           er.room?.roomNumber || "",
-          er.room?._id?.toString() || ""
+          er.room?._id?.toString() || "",
+          er.room?._id || null
         );
         if (occupied) continue;
 

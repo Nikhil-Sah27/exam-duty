@@ -21,7 +21,7 @@ export default function AssignDutyModal({ open, onClose }: AssignDutyModalProps)
   const [isSelf, setIsSelf] = useState(false);
 
   const user = useAuthStore((s) => s.user);
-  const canAssignOthers = user?.role === "cs" || user?.role === "dcs";
+  const canAssignOthers = user?.activeRole === "cs" || user?.activeRole === "dcs";
 
   const { data: exams } = useExams();
   const { data: users } = useUsers();

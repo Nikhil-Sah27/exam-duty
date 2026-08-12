@@ -1,5 +1,7 @@
 import { BookOpen } from "lucide-react";
 import type { ScheduleCourse } from "@/modules/shared/exams/types/exam.types";
+import ScheduleCourseList from "./ScheduleCourseList";
+import { groupScheduleCourses } from "../utils/scheduleCourseGrouping";
 
 /**
  * Shared "what subject is being written here?" block used by every modal that
@@ -7,15 +9,9 @@ import type { ScheduleCourse } from "@/modules/shared/exams/types/exam.types";
  * Upcoming Duties, Select Duty. Lives here (under shared/exams) so all four
  * dashboards consume one source of truth.
  *
- * Filtering:
- *   - If `forDepartments` is provided, courses are narrowed to those depts.
- *     Useful when a single ExamRoom carries multiple departments and you
- *     want to show only the relevant courses.
- *   - Otherwise the full schedule course list is rendered.
- *
- * Fallback (per spec): if no course data is available for the slot, the
- * block renders an explicit "Course: Not available · Code: N/A" line so
- * the modal layout doesn't shift unexpectedly.
+ * Elective handling: when multiple ScheduleCourse rows share an
+ * `electiveGroupId`, they collapse into a single "Group Name" row with an
+ * expand toggle (via ScheduleCourseList). Cores continue to render individually.
  */
 interface CourseSummaryProps {
   courses?: readonly ScheduleCourse[];
@@ -35,8 +31,6 @@ function relevantCourses(
   const filtered = courses.filter(
     (c) => c.departmentCode && wanted.has(c.departmentCode.toUpperCase()),
   );
-  // If filtering left nothing (mis-tagged data), fall back to the full list
-  // so the user at least sees something useful.
   return filtered.length > 0 ? filtered : [...courses];
 }
 
@@ -62,23 +56,12 @@ export default function CourseSummary({
     );
   }
 
+  // Header pluralisation should count grouped entries, not raw rows — an
+  // elective group with 3 members is one displayed "course".
+  const displayCount = groupScheduleCourses(list).length;
+
   if (variant === "compact") {
-    return (
-      <div className="space-y-1">
-        {list.map((c, i) => (
-          <div key={(c.courseId ?? c.courseCode ?? i).toString()} className="text-xs">
-            <span className="font-semibold text-gray-800">
-              {c.courseTitle ?? "Untitled course"}
-            </span>
-            {c.courseCode && (
-              <span className="ml-1.5 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">
-                {c.courseCode}
-              </span>
-            )}
-          </div>
-        ))}
-      </div>
-    );
+    return <ScheduleCourseList courses={list} variant="compact" showDeptChip={false} />;
   }
 
   return (
@@ -86,31 +69,16 @@ export default function CourseSummary({
       <div className="flex items-center gap-1.5 text-indigo-700">
         <BookOpen className="h-3.5 w-3.5" />
         <p className="text-[10px] font-bold uppercase tracking-widest">
-          Course{list.length > 1 ? "s" : ""}
+          Course{displayCount > 1 ? "s" : ""}
         </p>
       </div>
-      <ul className="mt-1.5 space-y-1.5">
-        {list.map((c, i) => (
-          <li
-            key={(c.courseId ?? c.courseCode ?? i).toString()}
-            className="flex items-start justify-between gap-2"
-          >
-            <div className="min-w-0">
-              <p className="truncate text-sm font-bold text-gray-900">
-                {c.courseTitle ?? "Untitled course"}
-              </p>
-              {c.departmentCode && list.length > 1 && (
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                  {c.departmentCode}
-                </p>
-              )}
-            </div>
-            <span className="shrink-0 rounded-md bg-indigo-600 px-2 py-0.5 text-[11px] font-bold text-white shadow-sm">
-              {c.courseCode ?? "N/A"}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <div className="mt-1.5">
+        <ScheduleCourseList
+          courses={list}
+          variant="vibrant"
+          showDeptChip={displayCount > 1}
+        />
+      </div>
     </div>
   );
 }

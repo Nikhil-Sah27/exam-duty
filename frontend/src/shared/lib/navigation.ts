@@ -35,7 +35,7 @@ export const navItems: NavItem[] = [
   { path: "/audit", label: "Audit Log", icon: ScrollText, roles: ADMIN_ROLES },
 ];
 
-export function getVisibleNavItems(role: UserRole | undefined): NavItem[] {
+export function getVisibleNavItems(role: UserRole | null | undefined): NavItem[] {
   return navItems.filter(
     (item) => !item.roles || (role && item.roles.includes(role))
   );

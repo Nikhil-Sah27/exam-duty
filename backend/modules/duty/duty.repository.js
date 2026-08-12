@@ -66,27 +66,23 @@ const findTeacherConflict = (teacherId, date, startTime, endTime, excludeId) => 
  * name) so the caller can build a precise error message, or `null` if the
  * slot is free for the given role.
  */
-const findRoomConflict = async (room, date, startTime, endTime, role, excludeId) => {
+const findRoomConflict = (room, date, startTime, endTime, role, excludeId, roomRef) => {
   const filter = {
-    room,
     date,
     status: "assigned",
     $or: [
       { startTime: { $lt: endTime }, endTime: { $gt: startTime } },
     ],
   };
-  if (excludeId) filter._id = { $ne: excludeId };
-
-  // Legacy callers (no role) keep old "any role conflicts" semantics.
-  if (!role) {
-    return Duty.findOne(filter).populate("teacher", "name role");
+  if (roomRef) {
+    filter.roomRef = roomRef;
+  } else {
+    filter.room = room;
   }
+  if (excludeId) filter._id = { $ne: excludeId };
+  if (role) filter.role = role;
 
-  // Pull every duty for this room+time, then filter by the role we're
-  // checking. Cardinality is bounded by the number of distinct roles per
-  // room (≤ 3), so the in-memory filter is trivial.
-  const duties = await Duty.find(filter).populate("teacher", "name role");
-  return duties.find((d) => d.teacher?.role === role) || null;
+  return Duty.findOne(filter).populate("teacher", "name roles");
 };
 
 module.exports = {

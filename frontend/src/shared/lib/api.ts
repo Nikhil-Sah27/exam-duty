@@ -8,15 +8,16 @@ const api = axios.create({
   },
 });
 
-// Request interceptor — attach token from store
+// Request interceptor — attach token from store. Prefer the full-role token;
+// fall back to the tempToken (only valid for /auth/select-role) when the user
+// hasn't chosen a role yet.
 api.interceptors.request.use(
   (config) => {
-    const token = useAuthStore.getState().token;
-
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    const { token, tempToken } = useAuthStore.getState();
+    const auth = token || tempToken;
+    if (auth) {
+      config.headers.Authorization = `Bearer ${auth}`;
     }
-
     return config;
   },
   (error) => Promise.reject(error)

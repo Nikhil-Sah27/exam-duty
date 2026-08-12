@@ -24,6 +24,7 @@ export const useSelfAssignDuty = () => {
     mutationFn: (data: SelfAssignRequest) => selfAssignDuty(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: DUTIES_KEY });
+      queryClient.invalidateQueries({ queryKey: ["duty-calculation"] });
     },
   });
 };
@@ -35,6 +36,7 @@ export const useAdminAssignDuty = () => {
     mutationFn: (data: AdminAssignRequest) => adminAssignDuty(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: DUTIES_KEY });
+      queryClient.invalidateQueries({ queryKey: ["duty-calculation"] });
     },
   });
 };
@@ -47,6 +49,7 @@ export const useCancelDuty = () => {
       cancelDuty(id, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: DUTIES_KEY });
+      queryClient.invalidateQueries({ queryKey: ["duty-calculation"] });
     },
   });
 };

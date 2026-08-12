@@ -66,6 +66,7 @@ export default function SeatSharingModal({
         roomId: selectedSeat.roomId,
         roomNumber: selectedSeat.roomNumber,
         roomCapacity: selectedSeat.roomCapacity,
+        buildingName: selectedSeat.buildingName ?? null,
         ownerDeptId: selectedSeat.ownerDeptId,
         ownerDeptCode: selectedSeat.ownerDeptCode,
         allocate: seatCount,

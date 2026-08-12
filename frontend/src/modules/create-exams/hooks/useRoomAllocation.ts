@@ -5,6 +5,8 @@ import type {
   RoutineEntry,
   SeatSharingPlanItem,
   Shift,
+  ShareableRoomMark,
+  GlobalSharedConsumption,
 } from "../types";
 import {
   type RoomAllocationState,
@@ -14,6 +16,9 @@ import {
   removeRoom,
   applySharing,
   removeSharing,
+  setShareableMark,
+  addGlobalShared,
+  removeGlobalShared,
 } from "../services/roomAllocationReducer";
 import { getRoomWarnings } from "../selectors/roomAssignSelectors";
 
@@ -81,6 +86,28 @@ export function useRoomAllocation({
     []
   );
 
+  // ── Global Seat Sharing handlers ───────────────────────────────
+  const handleSetShareableMark = useCallback(
+    (slotKey: string, deptId: string, mark: ShareableRoomMark | null) => {
+      setRoomState((prev) => setShareableMark(prev, slotKey, deptId, mark));
+    },
+    []
+  );
+
+  const handleAddGlobalShared = useCallback(
+    (slotKey: string, deptId: string, consumption: GlobalSharedConsumption) => {
+      setRoomState((prev) => addGlobalShared(prev, slotKey, deptId, consumption));
+    },
+    []
+  );
+
+  const handleRemoveGlobalShared = useCallback(
+    (slotKey: string, deptId: string, examRoomId: string) => {
+      setRoomState((prev) => removeGlobalShared(prev, slotKey, deptId, examRoomId));
+    },
+    []
+  );
+
   const roomWarnings = useMemo(
     () => getRoomWarnings(slotAllocations),
     [slotAllocations]
@@ -103,6 +130,9 @@ export function useRoomAllocation({
     handleRemoveRoom,
     handleApplySharing,
     handleRemoveSharing,
+    handleSetShareableMark,
+    handleAddGlobalShared,
+    handleRemoveGlobalShared,
     initSlotAllocations,
     setPlanId,
     setScheduleIds,

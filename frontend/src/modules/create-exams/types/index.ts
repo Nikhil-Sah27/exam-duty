@@ -32,6 +32,21 @@ export interface DateCalculation {
 
 // ---------- Departments Data (from API) ----------
 
+export interface CourseWithGroup {
+  _id: string;
+  name: string;
+  code: string;
+  credits: number;
+  courseType?: "core" | "professional_elective" | "open_elective";
+  electiveGroup?: { _id: string; name: string; type: "professional" | "open" } | null;
+}
+
+export interface ElectiveGroupData {
+  _id: string;
+  name: string;
+  type: "professional" | "open";
+}
+
 export interface DepartmentData {
   _id: string;
   name: string;
@@ -41,20 +56,18 @@ export interface DepartmentData {
     name: string;
     studentCount: number;
   };
-  courses: {
-    _id: string;
-    name: string;
-    code: string;
-    credits: number;
-  }[];
+  courses: CourseWithGroup[];
+  electiveGroups?: ElectiveGroupData[];
 }
 
 // ---------- Routine ----------
 
+// assignments[deptId] holds a tagged token — "course:<id>" or "group:<id>".
+// A legacy bare courseId is also accepted by the backend for compat.
 export interface RoutineEntry {
   date: string;
   shiftIndex: number;
-  assignments: Record<string, string>; // departmentId → courseId
+  assignments: Record<string, string>;
 }
 
 // ---------- Room Assignment ----------
@@ -80,6 +93,7 @@ export interface SharedSeatAllocation {
   roomId: string;
   roomNumber: string;
   roomCapacity: number;
+  buildingName?: string | null;
   ownerDeptId: string;
   ownerDeptCode: string;
   targetDeptId: string;
@@ -103,10 +117,60 @@ export interface SeatSharingPlanItem {
   roomId: string;
   roomNumber: string;
   roomCapacity: number;
+  buildingName?: string | null;
   ownerDeptId: string;
   ownerDeptCode: string;
   allocate: number;
 }
+
+// ---------- Global Seat Sharing (cross-exam-group) ----------
+
+/**
+ * A room that another exam group has explicitly opted into the global sharing
+ * pool. Returned by `POST /api/seat-sharing/available`, keyed by slotKey.
+ */
+export interface ShareableRoomOption {
+  examRoomId: string;
+  configurationId: string;
+  roomId: string;
+  roomNumber: string;
+  buildingName: string;
+  roomCapacity: number;
+  remainingSeats: number;
+  initialShareableSeats: number;
+  sourceExamGroupId: string;
+  sourceExamType: string;
+  sourceSemester: number;
+  sourceDepartmentCodes: string[];
+  scheduleId: string;
+}
+
+/** Client-side draft: the current dept has borrowed N seats from a shareable room. */
+export interface GlobalSharedConsumption {
+  examRoomId: string;
+  configurationId: string;
+  roomId: string;
+  roomNumber: string;
+  buildingName: string;
+  roomCapacity: number;
+  sourceExamGroupId: string;
+  sourceExamType: string;
+  sourceDepartmentCodes: string[];
+  studentsAllocated: number;
+}
+
+/**
+ * Client-side draft: the current dept has marked ONE of its assigned rooms as
+ * globally shareable (radio-select). `initialShareableSeats` is the dept's
+ * `extra` at the moment of marking.
+ */
+export interface ShareableRoomMark {
+  roomId: string;
+  initialShareableSeats: number;
+}
+
+/** slotKey → shareable rooms available in that slot */
+export type ShareableRoomsBySlot = Map<string, ShareableRoomOption[]>;
 
 /** Per-department allocation within a slot */
 export interface DepartmentAllocation {
@@ -116,10 +180,14 @@ export interface DepartmentAllocation {
   courseName: string;
   students: number;
   assignedRooms: RoomInfo[];
-  /** Seats this dept receives from other depts' rooms */
+  /** Seats this dept receives from other depts' rooms (intra-batch) */
   sharedSeatsReceived: SharedSeatAllocation[];
-  /** Seats this dept gives away to other depts from its rooms */
+  /** Seats this dept gives away to other depts from its rooms (intra-batch) */
   sharedSeatsGiven: SharedSeatAllocation[];
+  /** Global Seat Sharing: at most one owned room can be marked shareable */
+  shareableMark: ShareableRoomMark | null;
+  /** Global Seat Sharing: borrowed seats from other exam groups' rooms */
+  globalSharedReceived: GlobalSharedConsumption[];
 }
 
 /** A single exam slot with per-department room allocations */
@@ -198,6 +266,20 @@ export interface AssignRoomsPayload {
  */
 export interface FinalizeCIEPayload extends CreatePlanPayload {
   roomAssignments: AssignRoomsPayload["assignments"];
+  /** Global Seat Sharing — owner side. `scheduleKey = ${date}|${shiftIndex}`. */
+  shareableRoomMarks?: {
+    scheduleKey: string;
+    roomId: string;
+    departmentCode: string;
+    initialShareableSeats: number;
+  }[];
+  /** Global Seat Sharing — consumer side. */
+  globalSharedConsumptions?: {
+    scheduleKey: string;
+    sourceExamRoomId: string;
+    departmentCode: string;
+    studentsAllocated: number;
+  }[];
 }
 
 // ---------- API Responses ----------

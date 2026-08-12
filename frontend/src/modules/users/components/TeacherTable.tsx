@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { Inbox } from "lucide-react";
 import { useUsers } from "../hooks";
 import { UserProfile } from "../types";
+import type { UserRole } from "@/shared/lib/types";
 import TeacherStats from "./TeacherStats";
 import TeacherFilters from "./TeacherFilters";
 import TeacherRow from "./TeacherRow";
@@ -45,7 +46,7 @@ export default function TeacherTable({ onCreateClick }: TeacherTableProps) {
         )
           return false;
       }
-      if (filters.role && u.role !== filters.role) return false;
+      if (filters.role && !u.roles?.includes(filters.role as UserRole)) return false;
       if (filters.department && u.department !== filters.department) return false;
       return true;
     });

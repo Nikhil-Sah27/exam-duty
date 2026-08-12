@@ -35,7 +35,7 @@ export default function InvigilatorTimeSlotCard({
 }: InvigilatorTimeSlotCardProps) {
   const rooms = schedule.rooms || [];
   const [selectedRoomIdx, setSelectedRoomIdx] = useState<number | null>(null);
-  const userRole = useAuthStore((s) => s.user?.role);
+  const userRole = useAuthStore((s) => s.user?.activeRole);
   const viewerRole = (userRole as OperationalRoleKey) || "invigilator";
 
   const selectedRoom = selectedRoomIdx !== null ? rooms[selectedRoomIdx] : null;

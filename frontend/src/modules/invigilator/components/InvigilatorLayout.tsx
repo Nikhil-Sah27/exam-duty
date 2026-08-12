@@ -8,9 +8,9 @@ import InvigilatorSidebar from "./InvigilatorSidebar";
 export default function InvigilatorLayout() {
   const user = useAuthStore((s) => s.user);
 
-  if (user && user.role !== "invigilator") {
+  if (user && user.activeRole !== "invigilator") {
     // Send RS users to their own dashboard, admin roles back to root.
-    const elsewhere = getRoleConfig(user.role);
+    const elsewhere = getRoleConfig(user.activeRole);
     return <Navigate to={elsewhere?.defaultPath || "/"} replace />;
   }
 

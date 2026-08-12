@@ -12,8 +12,8 @@ import DCSSidebar from "./DCSSidebar";
 export default function DCSLayout() {
   const user = useAuthStore((s) => s.user);
 
-  if (user && user.role !== "dcs") {
-    const elsewhere = getRoleConfig(user.role);
+  if (user && user.activeRole !== "dcs") {
+    const elsewhere = getRoleConfig(user.activeRole);
     return <Navigate to={elsewhere?.defaultPath || "/"} replace />;
   }
 

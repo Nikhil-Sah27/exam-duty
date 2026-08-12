@@ -11,6 +11,8 @@ import { getGlobalAllocationStats } from "../selectors/allocationSelectors";
 import {
   mapRoutineToScheduleIds,
   buildAssignRoomsPayload,
+  buildShareableMarksPayload,
+  buildGlobalConsumptionsPayload,
 } from "../services/payloadBuilders";
 
 export default function CIEPage() {
@@ -47,6 +49,10 @@ export default function CIEPage() {
         shifts: exam.config.shifts,
         routine: exam.routine,
         roomAssignments: buildAssignRoomsPayload(exam.slotAllocations),
+        shareableRoomMarks: buildShareableMarksPayload(exam.slotAllocations),
+        globalSharedConsumptions: buildGlobalConsumptionsPayload(
+          exam.slotAllocations,
+        ),
       },
       {
         onSuccess: () => setSuccess(true),
@@ -225,6 +231,9 @@ export default function CIEPage() {
           onRemoveRoom={exam.handleRemoveRoom}
           onApplySharing={exam.handleApplySharing}
           onRemoveSharing={exam.handleRemoveSharing}
+          onSetShareableMark={exam.handleSetShareableMark}
+          onAddGlobalShared={exam.handleAddGlobalShared}
+          onRemoveGlobalShared={exam.handleRemoveGlobalShared}
           onAssignRooms={handleFinalizeExam}
           onPrev={exam.prevStep}
         />

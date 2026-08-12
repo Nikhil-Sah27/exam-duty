@@ -8,6 +8,7 @@ import type {
   ApiResponse,
   CreateExamsStatusResponse,
   ReservationInfo,
+  ShareableRoomOption,
 } from "../types";
 
 export const fetchCreateExamsStatus = async (): Promise<string> => {
@@ -75,6 +76,22 @@ export const fetchRoomAvailability = async (
 ): Promise<Record<string, ReservationInfo[]>> => {
   const res = await api.post<ApiResponse<Record<string, ReservationInfo[]>>>(
     "/exam-groups/room-availability",
+    { slots, excludeExamGroupId: excludeExamGroupId || null },
+  );
+  return res.data.data;
+};
+
+/**
+ * Global Seat Sharing discovery: for each `{date, startTime, endTime}` slot,
+ * return every ExamRoom marked shareable whose owner schedule overlaps that
+ * slot. Response is keyed by `${date}|${startTime}|${endTime}`.
+ */
+export const fetchShareableRoomsForSlots = async (
+  slots: { date: string; startTime: string; endTime: string }[],
+  excludeExamGroupId?: string | null,
+): Promise<Record<string, ShareableRoomOption[]>> => {
+  const res = await api.post<ApiResponse<Record<string, ShareableRoomOption[]>>>(
+    "/seat-sharing/available",
     { slots, excludeExamGroupId: excludeExamGroupId || null },
   );
   return res.data.data;

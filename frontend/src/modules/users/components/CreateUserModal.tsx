@@ -1,14 +1,12 @@
-
 import { useState, FormEvent } from "react";
 import { useCreateUser } from "../hooks";
 import { UserRole } from "@/shared/lib/types";
-import { Input, Select, Button, Modal, ErrorAlert } from "@/shared/components";
-import { ROLES, getRoleLabel } from "@/shared/constants/roles";
-
-const roleOptions = ROLES.map((r) => ({
-  value: r,
-  label: getRoleLabel(r),
-}));
+import { Input, Button, Modal, ErrorAlert } from "@/shared/components";
+import {
+  OTHER_DESIGNATION,
+  resolveRolesFromDesignation,
+} from "@/shared/utils/roleResolver";
+import DesignationRoleFields from "./DesignationRoleFields";
 
 interface CreateUserModalProps {
   open: boolean;
@@ -20,9 +18,10 @@ export default function CreateUserModal({ open, onClose }: CreateUserModalProps)
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
-  const [role, setRole] = useState<UserRole>("invigilator");
   const [department, setDepartment] = useState("");
   const [designation, setDesignation] = useState("");
+  // Only used when designation === "Other".
+  const [otherRole, setOtherRole] = useState<UserRole>("invigilator");
 
   const createMutation = useCreateUser();
 
@@ -31,22 +30,32 @@ export default function CreateUserModal({ open, onClose }: CreateUserModalProps)
     setEmail("");
     setPassword("");
     setPhone("");
-    setRole("invigilator");
     setDepartment("");
     setDesignation("");
+    setOtherRole("invigilator");
   };
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
+
+    // Derive roles: fixed by designation, or the caller's single pick for "Other".
+    const fixed = resolveRolesFromDesignation(designation);
+    const roles = designation === OTHER_DESIGNATION ? [otherRole] : fixed;
+
+    if (!roles || roles.length === 0) {
+      // Should be blocked by required=true on Designation, but guard anyway.
+      return;
+    }
+
     createMutation.mutate(
       {
         name,
         email,
         password,
-        phone: phone || undefined,
-        role,
+        phone,
+        designation,
+        roles,
         department: department || undefined,
-        designation: designation || undefined,
       },
       {
         onSuccess: () => {
@@ -96,19 +105,11 @@ export default function CreateUserModal({ open, onClose }: CreateUserModalProps)
           <Input
             label="Phone"
             type="tel"
+            required
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            placeholder="Optional"
+            placeholder="e.g. +91 98765 43210"
           />
-          <Select
-            label="Role"
-            value={role}
-            onChange={(e) => setRole(e.target.value as UserRole)}
-            options={roleOptions}
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
           <Input
             label="Department"
             type="text"
@@ -116,14 +117,14 @@ export default function CreateUserModal({ open, onClose }: CreateUserModalProps)
             onChange={(e) => setDepartment(e.target.value)}
             placeholder="e.g. Computer Science"
           />
-          <Input
-            label="Designation"
-            type="text"
-            value={designation}
-            onChange={(e) => setDesignation(e.target.value)}
-            placeholder="e.g. Associate Professor"
-          />
         </div>
+
+        <DesignationRoleFields
+          designation={designation}
+          onDesignationChange={setDesignation}
+          role={otherRole}
+          onRoleChange={setOtherRole}
+        />
 
         <div className="flex justify-end gap-3 pt-2">
           <Button type="button" variant="secondary" onClick={onClose}>

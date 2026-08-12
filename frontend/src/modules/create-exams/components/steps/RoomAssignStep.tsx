@@ -12,7 +12,18 @@ import {
 import Button from "@/shared/components/Button";
 import { useCIERooms } from "../../hooks";
 import { useSlotReservations } from "../../hooks/useSlotReservations";
-import type { SlotAllocation, UsedRoomsMap, RoomInfo, SeatSharingPlanItem, ReservationInfo, Shift } from "../../types";
+import { useSlotShareableRooms } from "../../hooks/useSlotShareableRooms";
+import type {
+  SlotAllocation,
+  UsedRoomsMap,
+  RoomInfo,
+  SeatSharingPlanItem,
+  ReservationInfo,
+  Shift,
+  ShareableRoomOption,
+  ShareableRoomMark,
+  GlobalSharedConsumption,
+} from "../../types";
 import { getSlotKey } from "../../services/roomAllocation";
 import { reservationSlotKey } from "../../utils/roomReservationUtils";
 import { getGlobalAllocationStats } from "../../selectors/allocationSelectors";
@@ -28,10 +39,15 @@ interface RoomAssignStepProps {
   isAssigning: boolean;
   /** Server-side error from the finalize call, surfaced inline above actions. */
   error?: string | null;
+  /** Passed to the seat-sharing hook when editing an existing group. */
+  excludeExamGroupId?: string | null;
   onAddRoom: (slotKey: string, deptId: string, room: RoomInfo) => void;
   onRemoveRoom: (slotKey: string, deptId: string, roomId: string) => void;
   onApplySharing: (slotKey: string, deptId: string, plan: SeatSharingPlanItem[]) => void;
   onRemoveSharing: (slotKey: string, deptId: string, roomId: string) => void;
+  onSetShareableMark: (slotKey: string, deptId: string, mark: ShareableRoomMark | null) => void;
+  onAddGlobalShared: (slotKey: string, deptId: string, consumption: GlobalSharedConsumption) => void;
+  onRemoveGlobalShared: (slotKey: string, deptId: string, examRoomId: string) => void;
   onAssignRooms: () => void;
   onPrev: () => void;
 }
@@ -44,10 +60,14 @@ export default function RoomAssignStep({
   warnings,
   isAssigning,
   error,
+  excludeExamGroupId,
   onAddRoom,
   onRemoveRoom,
   onApplySharing,
   onRemoveSharing,
+  onSetShareableMark,
+  onAddGlobalShared,
+  onRemoveGlobalShared,
   onAssignRooms,
   onPrev,
 }: RoomAssignStepProps) {
@@ -71,12 +91,16 @@ export default function RoomAssignStep({
     [slotAllocations, shifts],
   );
 
-  const { reservedBySlot } = useSlotReservations(slotWindows);
+  const { reservedBySlot } = useSlotReservations(slotWindows, excludeExamGroupId);
+  const { shareableBySlot } = useSlotShareableRooms(
+    slotWindows,
+    excludeExamGroupId,
+  );
 
-  // Union local (usedRoomsMap) with global reservations so the picker can
-  // disable *any* room already booked, regardless of which exam booked it.
-  // Local roomId-string keys use the existing `getSlotKey`; global reservations
-  // use a `date|startTime|endTime` key. We build a merged set per local key.
+  // Union local (usedRoomsMap) with global reservations + globally-shareable
+  // rooms — a room owned by another exam group can be BORROWED via the
+  // seat-sharing modal but must never be selectable directly from the picker,
+  // so we disable it in the grid the same way as any reservation.
   const disabledBySlot = useMemo(() => {
     const map = getDisabledRoomsBySlot(slotAllocations, usedRoomsMap);
     for (const slot of slotAllocations) {
@@ -89,13 +113,17 @@ export default function RoomAssignStep({
         shift.endTime,
       );
       const reserved = reservedBySlot.get(globalKey);
-      if (!reserved || reserved.size === 0) continue;
+      const shareable = shareableBySlot.get(globalKey);
+      if ((!reserved || reserved.size === 0) && (!shareable || shareable.length === 0)) {
+        continue;
+      }
       const merged = new Set(map.get(localKey) || []);
-      for (const roomId of reserved.keys()) merged.add(roomId);
+      if (reserved) for (const roomId of reserved.keys()) merged.add(roomId);
+      if (shareable) for (const opt of shareable) merged.add(opt.roomId);
       map.set(localKey, merged);
     }
     return map;
-  }, [slotAllocations, usedRoomsMap, shifts, reservedBySlot]);
+  }, [slotAllocations, usedRoomsMap, shifts, reservedBySlot, shareableBySlot]);
 
   // ReservationInfo lookup keyed by the *local* slotKey so SlotCard doesn't
   // need to know about the server's slotKey format.
@@ -116,6 +144,47 @@ export default function RoomAssignStep({
     return map;
   }, [slotAllocations, shifts, reservedBySlot]);
 
+  // Shareable-rooms lookup keyed by the *local* slotKey. The `remainingSeats`
+  // returned by the backend is the persistent pool at fetch time; subtract any
+  // in-session consumptions this batch has already committed to so the banner
+  // and picker never advertise seats another dept in the same batch already
+  // claimed. Removing a consumption on the client restores the count for free.
+  const shareableOptionsBySlot = useMemo(() => {
+    const map = new Map<string, ShareableRoomOption[]>();
+    for (const slot of slotAllocations) {
+      const shift = shifts[slot.shiftIndex];
+      if (!shift) continue;
+      const localKey = getSlotKey(slot.date, slot.shiftIndex);
+      const globalKey = reservationSlotKey(
+        slot.date,
+        shift.startTime,
+        shift.endTime,
+      );
+      const opts = shareableBySlot.get(globalKey);
+      if (!opts || opts.length === 0) continue;
+
+      const usedByExamRoom = new Map<string, number>();
+      for (const dept of slot.departments) {
+        for (const c of dept.globalSharedReceived) {
+          usedByExamRoom.set(
+            c.examRoomId,
+            (usedByExamRoom.get(c.examRoomId) || 0) + c.studentsAllocated,
+          );
+        }
+      }
+
+      const adjusted = opts.map((o) => {
+        const used = usedByExamRoom.get(o.examRoomId) || 0;
+        return {
+          ...o,
+          remainingSeats: Math.max(0, o.remainingSeats - used),
+        };
+      });
+      map.set(localKey, adjusted);
+    }
+    return map;
+  }, [slotAllocations, shifts, shareableBySlot]);
+
   // All business-logic derived from utils — component only handles presentation
   const globalStats = useMemo(
     () => getGlobalAllocationStats(slotAllocations),
@@ -132,7 +201,9 @@ export default function RoomAssignStep({
       if (active.length === 0) return true;
       return active.every(
         (d) =>
-          d.assignedRooms.length > 0 || d.sharedSeatsReceived.length > 0,
+          d.assignedRooms.length > 0 ||
+          d.sharedSeatsReceived.length > 0 ||
+          d.globalSharedReceived.length > 0,
       );
     });
   }, [slotAllocations]);
@@ -249,11 +320,19 @@ export default function RoomAssignStep({
             avgStudentsPerClass={avgStudentsPerClass}
             disabledRoomIds={disabledBySlot.get(slotKey) || new Set()}
             reservedRoomInfo={reservedInfoBySlot.get(slotKey)}
+            shareableOptions={shareableOptionsBySlot.get(slotKey) || []}
             defaultExpanded={index === 0}
             onAddRoom={(deptId, room) => onAddRoom(slotKey, deptId, room)}
             onRemoveRoom={(deptId, roomId) => onRemoveRoom(slotKey, deptId, roomId)}
             onApplySharing={(deptId, plan) => onApplySharing(slotKey, deptId, plan)}
             onRemoveSharing={(deptId, roomId) => onRemoveSharing(slotKey, deptId, roomId)}
+            onSetShareableMark={(deptId, mark) => onSetShareableMark(slotKey, deptId, mark)}
+            onAddGlobalShared={(deptId, consumption) =>
+              onAddGlobalShared(slotKey, deptId, consumption)
+            }
+            onRemoveGlobalShared={(deptId, examRoomId) =>
+              onRemoveGlobalShared(slotKey, deptId, examRoomId)
+            }
           />
         );
       })}

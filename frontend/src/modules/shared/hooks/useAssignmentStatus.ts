@@ -53,7 +53,7 @@ export function useAssignmentStatus({
   const user = useAuthStore((s) => s.user);
   const myUserId = user?.id ?? null;
   const role = (viewerRole ??
-    (user?.role as OperationalRoleKey | undefined) ??
+    (user?.activeRole as OperationalRoleKey | undefined) ??
     "invigilator") as OperationalRoleKey;
 
   return useMemo(() => {

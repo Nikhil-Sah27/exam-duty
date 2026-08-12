@@ -2,6 +2,12 @@ import { useState, useEffect, FormEvent } from "react";
 import { useUpdateUser } from "../hooks";
 import { UserProfile } from "../types";
 import { Input, Button, Modal, ErrorAlert } from "@/shared/components";
+import { UserRole } from "@/shared/lib/types";
+import {
+  OTHER_DESIGNATION,
+  resolveRolesFromDesignation,
+} from "@/shared/utils/roleResolver";
+import DesignationRoleFields from "./DesignationRoleFields";
 
 interface EditUserModalProps {
   open: boolean;
@@ -15,6 +21,7 @@ export default function EditUserModal({ open, onClose, user }: EditUserModalProp
   const [phone, setPhone] = useState("");
   const [department, setDepartment] = useState("");
   const [designation, setDesignation] = useState("");
+  const [otherRole, setOtherRole] = useState<UserRole>("invigilator");
 
   const updateMutation = useUpdateUser();
 
@@ -25,6 +32,9 @@ export default function EditUserModal({ open, onClose, user }: EditUserModalProp
       setPhone(user.phone ?? "");
       setDepartment(user.department ?? "");
       setDesignation(user.designation ?? "");
+      // Seed the "Other" single-role picker from the user's current roles
+      // (first entry is a fine default; only used when designation is "Other").
+      setOtherRole((user.roles?.[0] as UserRole) || "invigilator");
       updateMutation.reset();
     }
   }, [user, open]);
@@ -33,15 +43,20 @@ export default function EditUserModal({ open, onClose, user }: EditUserModalProp
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
+
+    const fixed = resolveRolesFromDesignation(designation);
+    const roles = designation === OTHER_DESIGNATION ? [otherRole] : fixed;
+
     updateMutation.mutate(
       {
         id: user._id,
         data: {
           name,
           email,
-          phone: phone || undefined,
+          phone,
           department: department || undefined,
           designation: designation || undefined,
+          roles: roles || undefined,
         },
       },
       {
@@ -77,9 +92,10 @@ export default function EditUserModal({ open, onClose, user }: EditUserModalProp
           <Input
             label="Phone"
             type="tel"
+            required
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            placeholder="Optional"
+            placeholder="e.g. +91 98765 43210"
           />
           <Input
             label="Department"
@@ -90,12 +106,11 @@ export default function EditUserModal({ open, onClose, user }: EditUserModalProp
           />
         </div>
 
-        <Input
-          label="Designation"
-          type="text"
-          value={designation}
-          onChange={(e) => setDesignation(e.target.value)}
-          placeholder="e.g. Associate Professor"
+        <DesignationRoleFields
+          designation={designation}
+          onDesignationChange={setDesignation}
+          role={otherRole}
+          onRoleChange={setOtherRole}
         />
 
         <div className="flex justify-end gap-3 pt-2">

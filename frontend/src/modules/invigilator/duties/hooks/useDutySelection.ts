@@ -52,7 +52,7 @@ export function useDutySelection(
   // flag is already true. Invigilator → invigilatorAssigned, RS → rsAssigned.
   // Falls back to invigilator for unknown/admin roles so the hook is safe to
   // call from contexts where the user isn't an operational role.
-  const config = getRoleConfig(user?.role);
+  const config = getRoleConfig(user?.activeRole || undefined);
   const flagKey = config?.flagKey ?? "invigilatorAssigned";
 
   const state = deriveSelectionState(slot, myDuties, flagKey, isPending);
@@ -60,6 +60,9 @@ export function useDutySelection(
   const invalidateSharedExamData = () => {
     queryClient.invalidateQueries({ queryKey: ["shared", "duty-status"] });
     queryClient.invalidateQueries({ queryKey: ["shared", "duties-by-teacher"] });
+    // Claiming or cancelling a duty changes the invigilator's completed +
+    // remaining counts — refresh the target widget on next render.
+    queryClient.invalidateQueries({ queryKey: ["duty-calculation"] });
   };
 
   const selectMutation = useMutation({

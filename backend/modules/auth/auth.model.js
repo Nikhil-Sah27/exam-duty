@@ -22,13 +22,21 @@ const userSchema = new mongoose.Schema(
     },
     phone: {
       type: String,
+      required: [true, "Phone is required"],
       trim: true,
-      default: null,
     },
-    role: {
-      type: String,
-      enum: ["cs", "dcs", "rs", "invigilator"],
-      default: "invigilator",
+    roles: {
+      type: [
+        {
+          type: String,
+          enum: ["cs", "dcs", "rs", "invigilator"],
+        },
+      ],
+      default: ["invigilator"],
+      validate: {
+        validator: (v) => Array.isArray(v) && v.length > 0,
+        message: "User must have at least one role",
+      },
     },
     department: {
       type: String,

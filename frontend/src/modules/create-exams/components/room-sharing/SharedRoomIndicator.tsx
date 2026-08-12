@@ -7,38 +7,42 @@ interface SharedRoomIndicatorProps {
   onRemove?: () => void;
 }
 
+// Renders one row in either the "Shared Seats (Received)" list (perspective=receiver)
+// or "Seats Shared Out" list (perspective=giver). Mirrors the layout of
+// GlobalSharedReceivedList so both intra-batch and cross-group shared entries
+// read the same: room number, building, counterpart dept, and student count.
 export default function SharedRoomIndicator({
   share,
   perspective,
   onRemove,
 }: SharedRoomIndicatorProps) {
   const isReceiver = perspective === "receiver";
+  const counterpartDept = isReceiver ? share.ownerDeptCode : share.targetDeptCode;
+  const relationLabel = isReceiver ? "Shared from" : "Shared to";
 
   return (
-    <div className="flex items-center gap-2 rounded-lg border-2 border-dashed border-orange-300 bg-orange-50/50 px-3 py-2">
+    <div className="flex items-center justify-between rounded-md border border-orange-200 bg-white/70 px-3 py-2">
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-semibold text-orange-700">
-          {share.roomNumber}
-          <span className="ml-1 font-normal text-orange-400">
-            ({share.sharedStudents} seats)
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-semibold text-gray-900">
+            Room {share.roomNumber}
           </span>
-        </p>
-        <p className="text-[10px] text-orange-500">
-          {isReceiver
-            ? `Shared from ${share.ownerDeptCode}`
-            : `Shared to ${share.targetDeptCode}`}
-        </p>
-      </div>
-
-      {/* Usage bar */}
-      <div className="hidden sm:block">
-        <div className="h-1.5 w-12 overflow-hidden rounded-full bg-orange-100">
-          <div
-            className="h-full rounded-full bg-orange-400 transition-all"
-            style={{
-              width: `${Math.min(100, Math.round((share.sharedStudents / share.roomCapacity) * 100))}%`,
-            }}
-          />
+          {share.buildingName && (
+            <span className="text-[11px] text-gray-500">
+              · {share.buildingName}
+            </span>
+          )}
+          <span className="text-[11px] text-gray-400">
+            (cap {share.roomCapacity})
+          </span>
+          <span className="rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">
+            {counterpartDept}
+          </span>
+        </div>
+        <div className="mt-0.5 text-[11px] text-orange-600">
+          <b>{share.sharedStudents}</b> student{share.sharedStudents !== 1 ? "s" : ""}{" "}
+          {isReceiver ? "placed here" : "seated here"}
+          <span className="ml-1 text-gray-400">· {relationLabel} {counterpartDept}</span>
         </div>
       </div>
 
@@ -48,10 +52,10 @@ export default function SharedRoomIndicator({
             e.stopPropagation();
             onRemove();
           }}
-          className="rounded-full p-0.5 text-orange-400 transition-colors hover:bg-orange-100 hover:text-orange-600"
+          className="rounded p-1 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500"
           title="Remove sharing"
         >
-          <X className="h-3 w-3" />
+          <X className="h-3.5 w-3.5" />
         </button>
       )}
     </div>

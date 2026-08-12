@@ -30,7 +30,7 @@ export default function ChangeRequestTable({
   onCreateClick,
 }: ChangeRequestTableProps) {
   const user = useAuthStore((s) => s.user);
-  const isCS = user?.role === "cs" || user?.role === "dcs";
+  const isCS = user?.activeRole === "cs" || user?.activeRole === "dcs";
 
   const allQuery = useChangeRequests();
   const myQuery = useMyChangeRequests();
@@ -81,16 +81,21 @@ export default function ChangeRequestTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {requests.map((req: ChangeRequest) => (
+              {requests.map((req: ChangeRequest) => {
+                // Duty may be null (DCS/RS-scope requests) and even when
+                // present, `exam` may be null for new-flow duties. Never
+                // dereference either without a guard.
+                const examName = req.duty?.exam?.name ?? "—";
+                const roomSlot = req.duty
+                  ? `${req.duty.room} · ${req.duty.startTime}–${req.duty.endTime}`
+                  : "Group-level request";
+                return (
                 <tr key={req._id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
                     <div className="font-medium text-gray-900">
-                      {req.duty.exam.name}
+                      {examName}
                     </div>
-                    <div className="text-xs text-gray-400">
-                      {req.duty.room} &middot; {req.duty.startTime}–
-                      {req.duty.endTime}
-                    </div>
+                    <div className="text-xs text-gray-400">{roomSlot}</div>
                   </td>
                   <td className="px-4 py-3">
                     <span
@@ -141,7 +146,8 @@ export default function ChangeRequestTable({
                     </td>
                   )}
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

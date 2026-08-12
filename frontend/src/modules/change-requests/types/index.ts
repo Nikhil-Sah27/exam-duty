@@ -7,6 +7,15 @@ export type ChangeRequestStatus =
 
 export interface ChangeRequest {
   _id: string;
+  /**
+   * Populated only for duty-scope requests. DCS and RS scoped requests have
+   * `duty: null` — their change targets live on `dcsSourceGroup`,
+   * `rsSourceDuties`, etc. instead.
+   *
+   * Even for duty-scope requests, `exam` may be null when the duty was
+   * created via the ExamGroup / ExamSchedule / ExamRoom flow — those duties
+   * use the new refs and carry no legacy Exam document.
+   */
   duty: {
     _id: string;
     room: string;
@@ -19,8 +28,8 @@ export interface ChangeRequest {
       _id: string;
       name: string;
       department: string;
-    };
-  };
+    } | null;
+  } | null;
   requestedBy: {
     _id: string;
     name: string;

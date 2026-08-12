@@ -21,48 +21,60 @@ export function getUnusedSeatsInSlot(
     if (!dept.courseId) continue;
     if (dept.departmentId === excludeDeptId) continue;
 
+    // Only surface rooms the owner has explicitly marked as shareable.
+    // Without a mark the owner has not opted in to sharing.
+    if (!dept.shareableMark) continue;
+
+    // Effective capacity includes both intra-batch received AND global (cross-
+    // group) received — a dept that borrows seats from a prior exam group to
+    // cover its own students can still legitimately offer its own spare seats
+    // to a sibling dept in the same slot.
     const totalOwnerCapacity = calculateCapacity(dept.assignedRooms);
+    const totalIntraReceived = dept.sharedSeatsReceived.reduce(
+      (sum, s) => sum + s.sharedStudents,
+      0
+    );
+    const totalGlobalReceived = dept.globalSharedReceived.reduce(
+      (sum, c) => sum + c.studentsAllocated,
+      0
+    );
+    const effectiveCapacity =
+      totalOwnerCapacity + totalIntraReceived + totalGlobalReceived;
+    if (effectiveCapacity <= dept.students) continue;
 
-    // Owner needs all rooms — nothing to share
-    if (totalOwnerCapacity <= dept.students) continue;
-
-    // Total seats already shared out from this dept
     const totalAlreadyShared = dept.sharedSeatsGiven.reduce(
       (sum, s) => sum + s.sharedStudents,
       0
     );
 
-    // True extra across the entire department
-    const deptBudget = totalOwnerCapacity - dept.students - totalAlreadyShared;
+    const liveExtra =
+      effectiveCapacity - dept.students - totalAlreadyShared;
+    const deptBudget = Math.min(liveExtra, dept.shareableMark.initialShareableSeats);
     if (deptBudget <= 0) continue;
 
-    // All shared students must go into one room (user picks which).
-    // Show every room that has physical space, each with availableSeats
-    // capped to the dept budget (since all seats come from one room).
-    for (const room of dept.assignedRooms) {
-      // Seats already shared out from this specific room
-      const roomAlreadyShared = dept.sharedSeatsGiven
-        .filter((s) => s.roomId === room._id)
-        .reduce((sum, s) => sum + s.sharedStudents, 0);
+    const markedRoom = dept.assignedRooms.find(
+      (r) => r._id === dept.shareableMark!.roomId
+    );
+    if (!markedRoom) continue;
 
-      // Physical space left in this room
-      const roomFreeSpace = room.capacity - roomAlreadyShared;
-      if (roomFreeSpace <= 0) continue;
+    const roomAlreadyShared = dept.sharedSeatsGiven
+      .filter((s) => s.roomId === markedRoom._id)
+      .reduce((sum, s) => sum + s.sharedStudents, 0);
 
-      // Can offer up to deptBudget seats, but not more than the room's free space
-      const available = Math.min(deptBudget, roomFreeSpace);
+    const roomFreeSpace = markedRoom.capacity - roomAlreadyShared;
+    if (roomFreeSpace <= 0) continue;
 
-      if (available > 0) {
-        result.push({
-          roomId: room._id,
-          roomNumber: room.roomNumber,
-          roomCapacity: room.capacity,
-          availableSeats: available,
-          ownerDeptId: dept.departmentId,
-          ownerDeptCode: dept.departmentCode,
-          buildingName: room.buildingName,
-        });
-      }
+    const available = Math.min(deptBudget, roomFreeSpace);
+    if (available > 0) {
+      result.push({
+        roomId: markedRoom._id,
+        roomNumber: markedRoom.roomNumber,
+        roomCapacity: markedRoom.capacity,
+        availableSeats: available,
+        ownerDeptId: dept.departmentId,
+        ownerDeptCode: dept.departmentCode,
+        buildingName: markedRoom.buildingName,
+      });
     }
   }
 
@@ -93,6 +105,7 @@ export function suggestSeatSharing(
       roomId: seat.roomId,
       roomNumber: seat.roomNumber,
       roomCapacity: seat.roomCapacity,
+      buildingName: seat.buildingName ?? null,
       ownerDeptId: seat.ownerDeptId,
       ownerDeptCode: seat.ownerDeptCode,
       allocate,
@@ -143,6 +156,7 @@ export function applySeatSharingToSlot(
           roomId: item.roomId,
           roomNumber: item.roomNumber,
           roomCapacity: item.roomCapacity,
+          buildingName: item.buildingName ?? null,
           ownerDeptId: item.ownerDeptId,
           ownerDeptCode: item.ownerDeptCode,
           targetDeptId,
@@ -164,6 +178,7 @@ export function applySeatSharingToSlot(
         roomId: item.roomId,
         roomNumber: item.roomNumber,
         roomCapacity: item.roomCapacity,
+        buildingName: item.buildingName ?? null,
         ownerDeptId: dept.departmentId,
         ownerDeptCode: dept.departmentCode,
         targetDeptId,

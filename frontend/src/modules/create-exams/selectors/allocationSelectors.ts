@@ -1,6 +1,29 @@
 import type { DepartmentAllocation, SlotAllocation, UnusedSeatInfo } from "../types";
 import { calculateCapacity, classesNeeded, getSlotSummary } from "../services/roomAllocation";
-import { getEffectiveCapacity, getEffectiveRemaining } from "../services/seatSharing";
+import { getEffectiveCapacity as getIntraBatchEffectiveCapacity } from "../services/seatSharing";
+
+/**
+ * True effective capacity for a dept, including BOTH intra-batch shared seats
+ * (received from another dept sharing a room in the same finalize batch) AND
+ * global shared seats (received from another exam group's already-reserved
+ * shareable room).
+ */
+function getGlobalSharedReceivedCount(dept: DepartmentAllocation): number {
+  return dept.globalSharedReceived.reduce(
+    (sum, c) => sum + c.studentsAllocated,
+    0
+  );
+}
+
+function getEffectiveCapacity(dept: DepartmentAllocation): number {
+  return getIntraBatchEffectiveCapacity(dept) + getGlobalSharedReceivedCount(dept);
+}
+
+function getEffectiveRemaining(dept: DepartmentAllocation): number {
+  return dept.students - getEffectiveCapacity(dept);
+}
+
+export { getGlobalSharedReceivedCount };
 
 // ──────────────────────────────────────────────
 // Department-level display stats (derived, never stored)
@@ -10,8 +33,17 @@ export interface DeptDisplayStats {
   ownCapacity: number;
   effectiveCapacity: number;
   effectiveRemaining: number;
+  /** Intra-batch shared seats received (sharedSeatsReceived). */
   sharedReceived: number;
+  /** Global (cross-exam-group) shared seats received. */
+  globalSharedReceived: number;
   extra: number;
+  /**
+   * Extra seats truly free for global sharing — subtracts intra-batch given
+   * away seats so an owner who is already lending seats to another dept
+   * within this batch can't accidentally over-commit the same physical space.
+   */
+  shareableExtra: number;
   capacityMet: boolean;
   needed: number;
   progressPct: number;
@@ -31,7 +63,13 @@ export function getDeptDisplayStats(
     (s, r) => s + r.sharedStudents,
     0
   );
+  const globalSharedReceived = getGlobalSharedReceivedCount(allocation);
   const extra = effectiveCapacity > students ? effectiveCapacity - students : 0;
+  const intraGivenAway = allocation.sharedSeatsGiven.reduce(
+    (s, r) => s + r.sharedStudents,
+    0
+  );
+  const shareableExtra = Math.max(0, extra - intraGivenAway);
   const capacityMet = effectiveCapacity >= students;
   const needed = classesNeeded(Math.max(0, effectiveRemaining), avgStudentsPerClass);
   const progressPct =
@@ -48,7 +86,9 @@ export function getDeptDisplayStats(
     effectiveCapacity,
     effectiveRemaining,
     sharedReceived,
+    globalSharedReceived,
     extra,
+    shareableExtra,
     capacityMet,
     needed,
     progressPct,
@@ -86,7 +126,8 @@ export function getSlotEffectiveSummary(
   const totalSharedSeats = activeDepts.reduce(
     (sum, d) =>
       sum +
-      d.sharedSeatsReceived.reduce((s, r) => s + r.sharedStudents, 0),
+      d.sharedSeatsReceived.reduce((s, r) => s + r.sharedStudents, 0) +
+      getGlobalSharedReceivedCount(d),
     0
   );
 
@@ -167,10 +208,9 @@ export function getGlobalAllocationStats(
 
     for (const dept of activeDepts) {
       totalRoomsAssigned += dept.assignedRooms.length;
-      const shared = dept.sharedSeatsReceived.reduce(
-        (s, r) => s + r.sharedStudents,
-        0
-      );
+      const shared =
+        dept.sharedSeatsReceived.reduce((s, r) => s + r.sharedStudents, 0) +
+        getGlobalSharedReceivedCount(dept);
       totalSharedSeats += shared;
 
       const effCap = getEffectiveCapacity(dept);

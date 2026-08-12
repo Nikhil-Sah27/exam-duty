@@ -1,36 +1,81 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Exam Duty — Frontend
 
-## Getting Started
+Vite + React 19 + TypeScript + Tailwind 4 client for the Exam Duty system. See the [root README](../README.md) for the full product overview.
 
-First, run the development server:
+## Stack
+
+- **Build:** Vite 6
+- **UI:** React 19 · Tailwind CSS 4 · Lucide icons
+- **State:** Zustand (client) · TanStack React Query (server cache)
+- **Routing:** React Router 7
+- **Forms:** React Hook Form · Zod
+
+## Scripts
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run dev       # Vite dev server on :5173, HMR enabled
+npm run build     # tsc -b && vite build
+npm run preview   # Serve the production build
+npm run lint      # ESLint
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The dev server proxies `/api/*` to `http://localhost:5000` (the backend). No `.env` is required for local dev.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Layout
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+src/
+├── App.tsx                  # Router root — public /login + protected admin + role trees
+├── main.tsx                 # Vite entry, QueryClient provider
+├── modules/
+│   ├── auth/                # Login form + hooks
+│   ├── dashboard/           # Admin dashboard
+│   ├── create-exams/        # CIE + SEE wizard (config → routine → rooms → sharing)
+│   ├── exams/               # List / filter / timetable
+│   ├── manage-duties/       # Per-teacher admin
+│   ├── users/               # Teacher CRUD
+│   ├── departments/         # Dept + semester + course + electives
+│   ├── infrastructure/      # Buildings + rooms
+│   ├── change-requests/     # Admin review + approve/reject
+│   ├── notifications/       # Bell + list
+│   ├── duties/              # Shared types + admin duty ops
+│   ├── invigilator/         # /invigilator/*  (single-room grain)
+│   ├── rs/                  # /rs/*           (group grain — chunks of ≤5 rooms)
+│   ├── dcs/                 # /dcs/*          (group grain — student-count sized)
+│   └── shared/
+│       ├── change-requests/ # ChangeRequestCard + types + hooks
+│       ├── exams/           # useSharedExamData, selectors, RoomDutyFlags
+│       ├── dashboard/       # Hero + section + role-agnostic normalizers
+│       └── role-config/     # Nav items + default path + role flag key
+└── shared/
+    ├── components/          # AuthGuard, Sidebar, ProtectedLayout, Navbar
+    ├── store/               # Zustand auth + app stores
+    └── lib/                 # Axios API client, User type, navigation config
+```
 
-## Learn More
+## Role Trees
 
-To learn more about Next.js, take a look at the following resources:
+Each role has its own routed subtree under `modules/<role>/routes/*Routes.tsx`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Role | Base | Grain | Notes |
+| --- | --- | --- | --- |
+| Invigilator | `/invigilator` | Single room | Select Duty grid, Upcoming Duties per-room cards. |
+| RS | `/rs` | Group of ≤5 rooms (per schedule + building) | Every screen is grouped: Dashboard, Select Duty, Upcoming Duties, Change Requests. |
+| DCS | `/dcs` | Persisted `DCSGroup` (sized by student count) | Same group parity as RS; upcoming cards show the invigilator contact for each room. |
+| CS | `/` (admin shell) | System-wide | Create Exams, Users, Departments, Infrastructure, Change Requests review. |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Auth Flow
 
-## Deploy on Vercel
+`ProtectedLayout` (`shared/components/ProtectedLayout.tsx`) wraps every protected route in `AuthGuard`. `AuthGuard` reads the persisted token from `localStorage`, hydrates the Zustand `useAuthStore`, and either redirects to `/login` or fetches `/api/auth/me` to hydrate the user profile. When the user's `role` is operational (`invigilator`/`rs`/`dcs`), the admin shell forwards them to `/<role>/dashboard`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Key Utilities
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `shared/dashboard/utils/dashboardNormalizers.ts` — pure functions that turn each role's server shape into the shared `DashboardDutyItem`. RS and DCS use group-based normalizers so cards always represent groups.
+- `rs/upcoming-duties/utils/rsUpcomingGrouping.ts` — canonical RS grouping algorithm (partition by `examGroup | schedule | date | time | building`, chunk by 5, deterministic `groupId = scheduleId:buildingId:chunkIndex`). Reused by Upcoming Duties, Change Requests, and Dashboard.
+- `invigilator/duties/utils/dutySelectionUtils.ts` — building-aware duty match. `dutyMatchesSlot` compares `duty.examRoom.room._id` before falling back to the room string, so `Academic Block 004` never shadows `Lab Block 004`.
+- `shared/exams/utils/examStatusUtils.ts` — mirror helpers for the shared exam views.
+- `shared/change-requests/components/ChangeRequestCard.tsx` — renders all three scopes (`duty`, `dcs_group`, `rs_group`) with source→target group blocks.
+
+## Testing UI Changes
+
+For any UI change, start the dev server (`npm run dev`), log in as the relevant role (see `../CREDENTIALS.md`), and click through the golden path plus edge cases. Type checks (`tsc -b --noEmit`) verify code correctness, not feature correctness — verify visually in the browser.

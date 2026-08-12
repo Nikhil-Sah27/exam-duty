@@ -4,5 +4,9 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role: UserRole;
+  phone?: string | null;
+  department?: string | null;
+  designation?: string | null;
+  roles: UserRole[];
+  activeRole: UserRole | null;
 }

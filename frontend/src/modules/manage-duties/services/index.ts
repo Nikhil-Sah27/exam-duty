@@ -1,5 +1,5 @@
 import api from "@/shared/lib/api";
-import { Teacher, TeacherDuty, AssignDutyPayload } from "../types";
+import { Teacher, TeacherDuty } from "../types";
 
 interface ListResponse<T> {
   success: boolean;
@@ -29,7 +29,23 @@ export const getTeacherDuties = async (teacherId: string): Promise<TeacherDuty[]
   return res.data.data;
 };
 
-export const assignDuty = async (data: AssignDutyPayload): Promise<TeacherDuty> => {
-  const res = await api.post<SingleResponse<TeacherDuty>>("/duties/admin-assign", data);
+/**
+ * Assign-duty shape used by the visual CS workflow: pick a real
+ * ExamSchedule + ExamRoom pair instead of manually typed room/date/time
+ * strings. Backend service resolves room/date/times from the refs.
+ */
+export interface AssignByScheduleSlotPayload {
+  examSchedule: string;
+  examRoom: string;
+  teacher: string;
+}
+
+export const assignDutyBySlot = async (
+  data: AssignByScheduleSlotPayload
+): Promise<TeacherDuty> => {
+  const res = await api.post<SingleResponse<TeacherDuty>>(
+    "/duties/admin-assign",
+    data
+  );
   return res.data.data;
 };

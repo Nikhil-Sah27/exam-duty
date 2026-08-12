@@ -11,7 +11,7 @@ import { getRoleConfig } from "@/modules/shared/role-config/roleConfig";
  */
 export default function ProtectedLayout() {
   const user = useAuthStore((s) => s.user);
-  const operationalConfig = getRoleConfig(user?.role);
+  const operationalConfig = getRoleConfig(user?.activeRole || undefined);
 
   if (operationalConfig) {
     return <Navigate to={operationalConfig.defaultPath} replace />;

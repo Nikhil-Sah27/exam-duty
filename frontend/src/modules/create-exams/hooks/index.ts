@@ -45,6 +45,9 @@ export const useFinalizeCIEExam = () => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["exam-groups"] });
       qc.invalidateQueries({ queryKey: ["shared", "exam-groups"] });
+      // New exam group changes the exam-type count for its semester → the
+      // per-invigilator target moves.
+      qc.invalidateQueries({ queryKey: ["duty-calculation"] });
     },
   });
 };
