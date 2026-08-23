@@ -9,7 +9,7 @@ Every user belongs to exactly one of four roles. Roles are stored on the `User` 
 | Role | Full Name | Grain | Responsibilities |
 | --- | --- | --- | --- |
 | **CS** | Controller of Superintendents | System | Full admin — creates exams, departments, rooms, users; reviews change requests; assigns duties directly. |
-| **DCS** | Deputy Controller of Superintendents | Room *group* (student-count sized, one DCS per ~300 students) | Claims a supervision group; oversees every room in the group; can approve change requests. |
+| **DCS** | Deputy Controller of Superintendents | Room *group* (student-count sized, one DCS per ≤300 students) | Claims a supervision group; oversees every room in the group; can approve change requests. |
 | **RS** | Room Superintendent | Room *group* (chunks of ≤5 rooms per building + time slot) | Claims a room group; supervises up to 5 rooms in the same block during a shift. |
 | **Invigilator** | Faculty Invigilator | Single room | Self-assigns or is assigned a single room per time slot; submits change requests. |
 
@@ -54,6 +54,16 @@ Every role can propose a change; CS and DCS approve/reject. Approval is atomic �
 | `rs_group` | `rs_swap` | RS | Source group's duties cancelled, one new duty per target-group room created for the requester. |
 
 RS groups aren't persisted server-side (they're derived from `schedule + building + chunk` on the client). The RS change request snapshots the source duty IDs and target `examRoom` IDs so approval can operate on a stable set of records.
+
+### DCS Group Sizing
+DCS supervision groups are generated at exam-creation time (in the same finalize call that creates the `ExamGroup`, `ExamSchedule`s, and `ExamRoom`s). Sizing is per-schedule and locked at creation:
+
+- **N (DCS required per schedule)** — `ceil(totalStudents / 300)`.
+- **`totalStudents`** — sum of `Semester.studentCount` for each unique `(department × examGroup.semester)` pair represented in that schedule's rooms. It uses the full semester roster, not per-subject registrations or attendance.
+- **Room distribution** — rooms are sorted numerically and split into `N` chunks; when rooms don't divide evenly, the first few chunks each get one extra room.
+- **Fallback** — a schedule with rooms but zero resolved students still gets one DCS group (never leave rooms unsupervised).
+
+Formula source: `backend/modules/dcs/dcsCalculation.utils.js`. Generation entry point: `dcsGroupService.generateDCSGroupsForExamGroup(examGroupId)`, invoked from `finalizeCIEPlan` / `finalizeSEEPlan`. For exams created before the module existed (or when a resize is needed), run `node backend/scripts/backfill-dcs-groups.js` (add `--force` to wipe existing groups and regenerate).
 
 ### Seat Sharing
 Exams that overlap in time can share leftover seats. During finalize, consumer exams detect overlapping shareable rooms and atomically decrement `remainingSeats` (with a `$gte` guard to prevent double-claim). Post-hoc marking, unmarking, and per-schedule allocation views are exposed under `/api/seat-sharing`.
@@ -103,7 +113,7 @@ Backend uses Mongoose models under `backend/modules/*/[name].model.js`.
 
 ### DCS — Group Supervisor
 1. **Dashboard** — group-oriented hero band (upcoming groups, total rooms, total students).
-2. **Select Duty** — browses `DCSGroup`s available for the exam; each group is sized to ~300 students and lists its rooms. Claiming a group creates one `Duty` per room atomically.
+2. **Select Duty** — browses `DCSGroup`s available for the exam; each group covers a subset of rooms in one schedule (sized so no DCS supervises more than 300 students) and lists its rooms. Claiming a group creates one `Duty` per room atomically.
 3. **Upcoming Duties** — one card per claimed group with the room list and (per room) the assigned invigilator's contact.
 4. **Change Requests** — swap a whole claimed group for another open group (`type = dcs_swap`). Cannot swap individual rooms.
 5. **Exams** — read-only exam browser.
@@ -398,6 +408,7 @@ CRUD for `Department`, `Semester` (`/semesters`), `ElectiveGroup` (`/elective-gr
 
 ## Recent Enhancements
 
+- **DCS supervision module** — persistent `DCSGroup` collection with per-schedule sizing (`ceil(students / 300)`), deterministic room distribution, claim/release lifecycle, per-group invigilator contact lookup, and `dcs_swap` change-request type. Generation is wired into `finalizeCIEPlan` / `finalizeSEEPlan`; a `backfill-dcs-groups.js` script backfills legacy `ExamGroup`s.
 - **Building-aware conflict detection** across the entire duty stack (model, repository, service, `examGroup.getDutyStatus`, `changeRequest.isInvigilatorAlreadyAssigned`, invigilator frontend selection utilities).
 - **RS group-based UI parity** — Upcoming Duties, Change Requests, and Dashboard now all render one card per RS group instead of per room. Backend gained `rs_group` scope and `rs_swap` type on `ChangeRequest` with atomic approval, and `Duty` gained an indexed `roomRef` field for building-scoped queries.
 - **Elective seeding** — every `(department, semester)` pair has at least one professional-elective and one open-elective course, attached to `ElectiveGroup`s so the Departments UI renders them.

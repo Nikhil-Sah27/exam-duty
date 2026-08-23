@@ -1,4 +1,5 @@
 const Duty = require("./duty.model");
+const ExamRoom = require("../exam/examRoom.model");
 
 const POPULATE_FIELDS = [
   { path: "exam", select: "name date department semester type" },
@@ -85,6 +86,22 @@ const findRoomConflict = (room, date, startTime, endTime, role, excludeId, roomR
   return Duty.findOne(filter).populate("teacher", "name roles");
 };
 
+const findExamRoomsWithDetails = (examRoomIds) => {
+  return ExamRoom.find({ _id: { $in: examRoomIds } }).populate({
+    path: "room",
+    select: "roomNumber floor capacity building",
+    populate: { path: "building", select: "name" },
+  });
+};
+
+const findInvigilatorDutiesForRooms = (examRoomIds) => {
+  return Duty.find({
+    examRoom: { $in: examRoomIds },
+    role: "invigilator",
+    status: "assigned",
+  }).populate("teacher", "name email phone department");
+};
+
 module.exports = {
   create,
   findAll,
@@ -92,4 +109,6 @@ module.exports = {
   updateById,
   findTeacherConflict,
   findRoomConflict,
+  findExamRoomsWithDetails,
+  findInvigilatorDutiesForRooms,
 };

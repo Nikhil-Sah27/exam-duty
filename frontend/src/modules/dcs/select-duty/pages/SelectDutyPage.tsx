@@ -2,7 +2,7 @@ import { Crown } from "lucide-react";
 import DutyFilterBar from "@/modules/invigilator/select-duty/components/DutyFilterBar";
 import type { DutyFilters } from "@/modules/invigilator/select-duty/types";
 import { useDcsDutySelection } from "../hooks/useDcsDutySelection";
-import DcsGroupList from "../components/DcsGroupList";
+import DcsGroupSections from "../components/DcsGroupSections";
 import DcsSelectionPanel from "../components/DcsSelectionPanel";
 import DutyStatusLegend from "@/modules/shared/components/DutyStatusLegend";
 
@@ -91,7 +91,7 @@ export default function SelectDutyPage() {
           {isLoading ? (
             <p className="py-8 text-center text-sm text-gray-400">Loading groups...</p>
           ) : (
-            <DcsGroupList
+            <DcsGroupSections
               groups={filteredGroups}
               stateOf={stateOf}
               onToggle={tryToggleGroup}

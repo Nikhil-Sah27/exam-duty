@@ -326,6 +326,96 @@ const adminAssignDuty = async (data, adminId) => {
   return assignDuty(data, adminId, false, null);
 };
 
+/**
+ * Admin-assign one **room group** to a specific teacher. Same transactional
+ * semantics as `selfAssignDutyGroup` but the target is `data.teacher` (not the
+ * caller), and the role is taken from `data.role` — or inferred when the
+ * teacher has exactly one duty-eligible role. A `duty_assigned` notification
+ * fires per room in the group so the teacher's bell shows every new duty.
+ */
+const adminAssignDutyGroup = async (data, adminId) => {
+  const { teacher: teacherId, examSchedule, examRooms, role: requestedRole } = data;
+
+  if (!teacherId) throw new AppError("Teacher ID is required for admin assignment", 400);
+  if (!examSchedule) throw new AppError("examSchedule is required", 400);
+  if (!Array.isArray(examRooms) || examRooms.length === 0) {
+    throw new AppError("examRooms must be a non-empty array", 400);
+  }
+  const uniqueRoomIds = [...new Set(examRooms.map((id) => String(id)))];
+  if (uniqueRoomIds.length !== examRooms.length) {
+    throw new AppError("examRooms contains duplicate entries", 400);
+  }
+
+  await validateTeacher(teacherId);
+  const dutyRole = await resolveRoleForAssignment(teacherId, null, requestedRole, false);
+  if (dutyRole !== "rs" && dutyRole !== "dcs") {
+    throw new AppError("Group assignment is only valid for DCS and RS roles", 400);
+  }
+
+  const resolved = await Promise.all(
+    uniqueRoomIds.map((roomId) => validateScheduleSlot(examSchedule, roomId)),
+  );
+
+  const { schedule } = resolved[0];
+  const date = schedule.date;
+  const startTime = schedule.startTime;
+  const endTime = schedule.endTime;
+  validateTimeRange(startTime, endTime);
+
+  for (const { examRoom } of resolved) {
+    const roomNumber = examRoom?.room?.roomNumber || "";
+    const roomRef = examRoom?.room?._id || null;
+    await validateConflicts(teacherId, roomNumber, date, startTime, endTime, undefined, roomRef, dutyRole);
+  }
+
+  const createdIds = await withOptionalTransaction(async (session) => {
+    const ids = [];
+    for (const { schedule: s, examRoom } of resolved) {
+      const roomNumber = examRoom?.room?.roomNumber || "";
+      const roomRef = examRoom?.room?._id || null;
+      const duty = await dutyRepository.create(
+        {
+          exam: null,
+          examSchedule: s._id,
+          examRoom: examRoom._id,
+          teacher: teacherId,
+          role: dutyRole,
+          room: roomNumber,
+          roomRef,
+          date: s.date,
+          startTime: s.startTime,
+          endTime: s.endTime,
+          assignedBy: adminId,
+          isSelfAssigned: false,
+        },
+        session,
+      );
+      ids.push(duty._id);
+    }
+    return ids;
+  });
+
+  const populated = await Promise.all(
+    createdIds.map((id) => dutyRepository.findById(id)),
+  );
+
+  for (const d of populated) {
+    emit("duty_assigned", {
+      recipient: teacherId,
+      refModel: "Duty",
+      refId: d._id,
+      data: {
+        room: d.room,
+        date: d.date,
+        startTime: d.startTime,
+        endTime: d.endTime,
+      },
+    });
+  }
+
+  return populated;
+};
+
 const getAllDuties = async (query) => {
   const filter = {};
 
@@ -344,6 +434,58 @@ const getAllDuties = async (query) => {
   }
 
   return dutyRepository.findAll(filter);
+};
+
+/**
+ * Given a set of ExamRoom ids, return each room with the invigilators
+ * currently assigned to it. Used by the RS and DCS dashboards to surface
+ * per-room contact info for the people working under a supervisor.
+ *
+ * Kept role-agnostic on purpose: RS groups are client-derived so we can't
+ * key off a stored group id like DCS does. Any authenticated caller may
+ * ask about any room set — the data (name / email / phone / department)
+ * is already visible elsewhere in the app.
+ */
+const getInvigilatorsForRooms = async (examRoomIds) => {
+  if (!Array.isArray(examRoomIds) || examRoomIds.length === 0) {
+    throw new AppError("examRoomIds must be a non-empty array", 400);
+  }
+  if (examRoomIds.length > 100) {
+    throw new AppError("examRoomIds exceeds the 100-id limit", 400);
+  }
+  const uniqueIds = [...new Set(examRoomIds.map(String))];
+
+  const [examRooms, duties] = await Promise.all([
+    dutyRepository.findExamRoomsWithDetails(uniqueIds),
+    dutyRepository.findInvigilatorDutiesForRooms(uniqueIds),
+  ]);
+
+  const invigilatorsByRoom = new Map();
+  for (const d of duties) {
+    if (!d.teacher) continue;
+    const key = String(d.examRoom);
+    const bucket = invigilatorsByRoom.get(key) || [];
+    bucket.push({
+      _id: d.teacher._id,
+      name: d.teacher.name,
+      email: d.teacher.email,
+      phone: d.teacher.phone || null,
+      department: d.teacher.department || null,
+    });
+    invigilatorsByRoom.set(key, bucket);
+  }
+
+  // Preserve caller-provided order so RS/DCS render in group order.
+  const byId = new Map(examRooms.map((er) => [String(er._id), er]));
+  return uniqueIds
+    .map((id) => byId.get(id))
+    .filter(Boolean)
+    .map((examRoom) => ({
+      examRoomId: examRoom._id,
+      room: examRoom.room,
+      departments: examRoom.departments,
+      invigilators: invigilatorsByRoom.get(String(examRoom._id)) || [],
+    }));
 };
 
 const getDutyById = async (id) => {
@@ -378,7 +520,9 @@ module.exports = {
   selfAssignDuty,
   selfAssignDutyGroup,
   adminAssignDuty,
+  adminAssignDutyGroup,
   getAllDuties,
   getDutyById,
+  getInvigilatorsForRooms,
   cancelDuty,
 };

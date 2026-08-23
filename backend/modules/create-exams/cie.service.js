@@ -506,7 +506,7 @@ const finalizeCIEPlan = async (data, userId) => {
 
   // ---- Transactional persistence ----
 
-  return withOptionalTransaction(async (session) => {
+  const plan = await withOptionalTransaction(async (session) => {
     const sessionOpt = session ? { session } : {};
 
     // Reuse an existing (examType, semester) group when one overlaps —

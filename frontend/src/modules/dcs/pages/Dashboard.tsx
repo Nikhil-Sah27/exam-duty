@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/shared/store/auth.store";
 import DashboardHero from "@/modules/shared/dashboard/components/DashboardHero";
@@ -8,14 +8,21 @@ import {
   normalizeDcsUpcoming,
 } from "@/modules/shared/dashboard/utils/dashboardNormalizers";
 import { getMyDcsGroups } from "../select-duty/services/dcsDutyService";
+import type { DcsGroup } from "../select-duty/types";
+import DcsDutyModal from "../upcoming-duties/components/DcsDutyModal";
 
 /**
  * DCS dashboard. Mirrors the structure used by the RS and Invigilator
  * dashboards — same hero band + upcoming + completed sections, fed by the
  * DCS-specific data source.
+ *
+ * Clicking any duty card opens the shared DcsDutyModal, which fetches per-room
+ * invigilator contact details so a DCS can see (and reach) the invigilators
+ * working under them.
  */
 export default function Dashboard() {
   const user = useAuthStore((s) => s.user);
+  const [selectedGroup, setSelectedGroup] = useState<DcsGroup | null>(null);
 
   const myGroupsQuery = useQuery({
     queryKey: ["dcs", "my-groups"],
@@ -24,8 +31,34 @@ export default function Dashboard() {
   });
   const groups = myGroupsQuery.data ?? [];
 
-  const upcoming = useMemo(() => normalizeDcsUpcoming({ groups }), [groups]);
-  const completed = useMemo(() => normalizeDcsCompleted({ groups }), [groups]);
+  const groupById = useMemo(
+    () => new Map(groups.map((g) => [g._id, g])),
+    [groups],
+  );
+
+  const openByGroupId = (id: string) => {
+    const g = groupById.get(id);
+    if (g) setSelectedGroup(g);
+  };
+
+  const upcoming = useMemo(
+    () =>
+      normalizeDcsUpcoming({ groups }).map((item) => ({
+        ...item,
+        onClick: () => openByGroupId(item.id),
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [groups, groupById],
+  );
+  const completed = useMemo(
+    () =>
+      normalizeDcsCompleted({ groups }).map((item) => ({
+        ...item,
+        onClick: () => openByGroupId(item.id),
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [groups, groupById],
+  );
 
   const totalRooms = upcoming.reduce((sum, g) => sum + g.rooms.length, 0);
   const totalStudents = upcoming.reduce((sum, g) => sum + (g.students ?? 0), 0);
@@ -77,6 +110,12 @@ export default function Dashboard() {
           />
         </>
       )}
+
+      <DcsDutyModal
+        open={Boolean(selectedGroup)}
+        group={selectedGroup}
+        onClose={() => setSelectedGroup(null)}
+      />
     </div>
   );
 }

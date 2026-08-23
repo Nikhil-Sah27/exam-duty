@@ -127,3 +127,51 @@ export function groupRoomsIntoRSGroups(
 export function totalRoomCount(groups: readonly RSDutyGroup[]): number {
   return groups.reduce((sum, g) => sum + g.rooms.length, 0);
 }
+
+export interface RSDutyDateTimeSection {
+  /** Stable id — `${date}|${startTime}|${endTime}`. */
+  sectionId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  /** All groups that share this date + time window, in the original order. */
+  groups: RSDutyGroup[];
+}
+
+/**
+ * Partition RS duty groups into date+time sections so the UI can render a
+ * heading (date + start–end time) followed by the groups that fall inside it.
+ * Input order is preserved inside each section, and sections themselves are
+ * sorted by date → startTime → endTime to match the flat sort in
+ * `groupRoomsIntoRSGroups`.
+ *
+ * Pure — safe to call inside a memo hook. Empty input returns an empty array.
+ */
+export function sectionizeRSGroupsByDateTime(
+  groups: readonly RSDutyGroup[],
+): RSDutyDateTimeSection[] {
+  if (groups.length === 0) return [];
+
+  const buckets = new Map<string, RSDutyDateTimeSection>();
+  for (const g of groups) {
+    const sectionId = `${g.date}|${g.startTime}|${g.endTime}`;
+    const existing = buckets.get(sectionId);
+    if (existing) {
+      existing.groups.push(g);
+    } else {
+      buckets.set(sectionId, {
+        sectionId,
+        date: g.date,
+        startTime: g.startTime,
+        endTime: g.endTime,
+        groups: [g],
+      });
+    }
+  }
+
+  return [...buckets.values()].sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    if (a.startTime !== b.startTime) return a.startTime < b.startTime ? -1 : 1;
+    return a.endTime < b.endTime ? -1 : a.endTime > b.endTime ? 1 : 0;
+  });
+}

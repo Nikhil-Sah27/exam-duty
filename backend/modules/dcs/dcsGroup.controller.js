@@ -25,6 +25,19 @@ const claim = catchAsync(async (req, res) => {
   });
 });
 
+const adminClaim = catchAsync(async (req, res) => {
+  const result = await dcsGroupService.adminClaimGroup(
+    req.params.id,
+    req.body?.teacher,
+    req.user.id,
+  );
+  res.status(200).json({
+    success: true,
+    data: result.group,
+    duties: result.dutyIds,
+  });
+});
+
 const release = catchAsync(async (req, res) => {
   const group = await dcsGroupService.releaseGroup(
     req.params.id,
@@ -44,6 +57,7 @@ module.exports = {
   getMine,
   getById,
   claim,
+  adminClaim,
   release,
   getRoomInvigilators,
 };

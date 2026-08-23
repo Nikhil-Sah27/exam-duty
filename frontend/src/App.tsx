@@ -19,6 +19,8 @@ import ManageDutiesPage from "@/modules/manage-duties/components/ManageDutiesPag
 import TeacherDetailsPage from "@/modules/manage-duties/components/TeacherDetailsPage";
 import AssignDutyExamsPage from "@/modules/manage-duties/components/AssignDutyExamsPage";
 import AssignDutyExamDetailsPage from "@/modules/manage-duties/components/AssignDutyExamDetailsPage";
+import AssignRSDutyPage from "@/modules/manage-duties/components/AssignRSDutyPage";
+import AssignDCSDutyPage from "@/modules/manage-duties/components/AssignDCSDutyPage";
 import { invigilatorRoutes } from "@/modules/invigilator/routes/invigilatorRoutes";
 import { rsRoutes } from "@/modules/rs/routes/rsRoutes";
 import { dcsRoutes } from "@/modules/dcs/routes/dcsRoutes";
@@ -45,6 +47,14 @@ export default function App() {
         <Route
           path="/manage-duties/:id/assign/exams/:examId"
           element={<AssignDutyExamDetailsPage />}
+        />
+        <Route
+          path="/manage-duties/:id/assign-rs"
+          element={<AssignRSDutyPage />}
+        />
+        <Route
+          path="/manage-duties/:id/assign-dcs"
+          element={<AssignDCSDutyPage />}
         />
         <Route path="/departments" element={<DepartmentsPage />} />
         <Route path="/departments/:id" element={<DepartmentDetailsPage />} />

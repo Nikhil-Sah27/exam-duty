@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useAuthStore } from "@/shared/store/auth.store";
 import { useDutiesByTeacher } from "@/modules/shared/exams/hooks/useSharedExamData";
 import DashboardHero from "@/modules/shared/dashboard/components/DashboardHero";
@@ -7,25 +7,61 @@ import {
   normalizeRsGroupsCompleted,
   normalizeRsGroupsUpcoming,
 } from "@/modules/shared/dashboard/utils/dashboardNormalizers";
+import {
+  groupRSDutiesIntoUpcomingGroups,
+  type RSUpcomingGroup,
+} from "@/modules/rs/upcoming-duties/utils/rsUpcomingGrouping";
+import RSUpcomingGroupModal from "@/modules/rs/upcoming-duties/components/RSUpcomingGroupModal";
 
 /**
  * RS dashboard. Same layout contract as the DCS / Invigilator dashboards —
  * hero band + upcoming + completed sections — but coloured for the RS
  * (Room Superintendent) role. RS is a *group* role: cards represent whole
  * room groups (up to 5 rooms per schedule + building), never individual rooms.
+ *
+ * Clicking a card opens the shared RS group modal — same one used on the
+ * Upcoming Duties page — which now includes per-room invigilator contacts.
  */
 export default function Dashboard() {
   const user = useAuthStore((s) => s.user);
   const dutiesQuery = useDutiesByTeacher(user?.id);
   const duties = dutiesQuery.data ?? [];
+  const [selectedGroup, setSelectedGroup] = useState<RSUpcomingGroup | null>(
+    null,
+  );
+
+  // Build the full groupId → RSUpcomingGroup lookup once. Both the upcoming
+  // and completed normalizers derive their group ids from the same grouping
+  // util applied to non-cancelled duties, so the ids align.
+  const groupById = useMemo(() => {
+    const active = duties.filter((d) => d.status !== "cancelled");
+    const all = groupRSDutiesIntoUpcomingGroups(active);
+    return new Map(all.map((g) => [g.groupId, g]));
+  }, [duties]);
+
+  const openByGroupId = (groupId: string) => {
+    const g = groupById.get(groupId);
+    if (g) setSelectedGroup(g);
+  };
 
   const upcoming = useMemo(
-    () => normalizeRsGroupsUpcoming({ duties }),
-    [duties],
+    () =>
+      normalizeRsGroupsUpcoming({ duties }).map((item) => ({
+        ...item,
+        onClick: () => openByGroupId(item.id),
+      })),
+    // openByGroupId reads from groupById which is memoized above; safe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [duties, groupById],
   );
   const completed = useMemo(
-    () => normalizeRsGroupsCompleted({ duties }),
-    [duties],
+    () =>
+      normalizeRsGroupsCompleted({ duties }).map((item) => ({
+        ...item,
+        onClick: () => openByGroupId(item.id),
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [duties, groupById],
   );
 
   const totalRooms = upcoming.reduce((sum, g) => sum + g.rooms.length, 0);
@@ -80,6 +116,12 @@ export default function Dashboard() {
           />
         </>
       )}
+
+      <RSUpcomingGroupModal
+        open={Boolean(selectedGroup)}
+        group={selectedGroup}
+        onClose={() => setSelectedGroup(null)}
+      />
     </div>
   );
 }

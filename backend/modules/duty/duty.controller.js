@@ -16,6 +16,11 @@ const adminAssign = catchAsync(async (req, res) => {
   res.status(201).json({ success: true, data: duty });
 });
 
+const adminAssignGroup = catchAsync(async (req, res) => {
+  const duties = await dutyService.adminAssignDutyGroup(req.body, req.user.id);
+  res.status(201).json({ success: true, count: duties.length, data: duties });
+});
+
 const getAll = catchAsync(async (req, res) => {
   const duties = await dutyService.getAllDuties(req.query);
   res.status(200).json({ success: true, count: duties.length, data: duties });
@@ -31,4 +36,18 @@ const cancel = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data: duty });
 });
 
-module.exports = { selfAssign, selfAssignGroup, adminAssign, getAll, getById, cancel };
+const invigilatorsForRooms = catchAsync(async (req, res) => {
+  const data = await dutyService.getInvigilatorsForRooms(req.body?.examRoomIds);
+  res.status(200).json({ success: true, count: data.length, data });
+});
+
+module.exports = {
+  selfAssign,
+  selfAssignGroup,
+  adminAssign,
+  adminAssignGroup,
+  getAll,
+  getById,
+  cancel,
+  invigilatorsForRooms,
+};

@@ -11,6 +11,7 @@ const Department = require("../department/department.model");
 const Semester = require("../department/semester.model");
 const User = require("../auth/auth.model");
 const Duty = require("../duty/duty.model");
+const { emit } = require("../notification/notification.emitter");
 
 const {
   calculateRequiredDCS,
@@ -200,8 +201,19 @@ const validateDcsUser = async (userId) => {
   return user;
 };
 
-const claimGroup = async (groupId, userId) => {
-  const user = await validateDcsUser(userId);
+/**
+ * Core claim implementation shared by self-claim and admin-claim. Creates one
+ * Duty per assigned room in a single transaction and marks the group as
+ * `claimed` for `assigneeId`. `assignedById` is stamped on each Duty (either
+ * the same user for self-claim, or the CS admin for admin-claim). When
+ * `notify` is true, one `duty_assigned` notification per created duty fires
+ * against the assignee's bell.
+ */
+const _performClaim = async (
+  groupId,
+  { assigneeId, assignedById, isSelfAssigned, notify }
+) => {
+  await validateDcsUser(assigneeId);
 
   const group = await dcsGroupRepository.findById(groupId);
   if (!group) throw new AppError("DCS group not found", 404);
@@ -236,14 +248,15 @@ const claimGroup = async (groupId, userId) => {
 
   // Block teacher double-booking at the same time.
   const conflict = await dutyRepository.findTeacherConflict(
-    userId,
+    assigneeId,
     group.schedule.date,
     group.schedule.startTime,
     group.schedule.endTime
   );
   if (conflict) {
+    const who = isSelfAssigned ? "You" : "Teacher";
     throw new AppError(
-      `You already have a duty at ${conflict.room} from ${conflict.startTime}–${conflict.endTime} on this date`,
+      `${who} already has a duty at ${conflict.room} from ${conflict.startTime}–${conflict.endTime} on this date`,
       409
     );
   }
@@ -265,15 +278,15 @@ const claimGroup = async (groupId, userId) => {
           exam: null,
           examSchedule: fresh.schedule._id,
           examRoom: examRoom._id,
-          teacher: userId,
+          teacher: assigneeId,
           role: "dcs",
           room: roomNumber,
           roomRef,
           date: fresh.schedule.date,
           startTime: fresh.schedule.startTime,
           endTime: fresh.schedule.endTime,
-          assignedBy: userId,
-          isSelfAssigned: true,
+          assignedBy: assignedById,
+          isSelfAssigned,
         },
         session
       );
@@ -283,7 +296,7 @@ const claimGroup = async (groupId, userId) => {
     await dcsGroupRepository.updateById(
       groupId,
       {
-        assignedTeacher: userId,
+        assignedTeacher: assigneeId,
         status: "claimed",
         duties: dutyIds,
       },
@@ -293,11 +306,54 @@ const claimGroup = async (groupId, userId) => {
     return dutyIds;
   });
 
-  void user; // referenced for validation side-effect
-  return dcsGroupRepository.findById(groupId).then((g) => ({
-    group: g,
-    dutyIds: createdIds,
-  }));
+  if (notify) {
+    // Fire one notification per created duty so the DCS teacher sees each
+    // room appear on their bell. Mirrors the RS admin-assign-group behaviour.
+    const created = await Promise.all(
+      createdIds.map((id) => Duty.findById(id).select("room date startTime endTime"))
+    );
+    for (const d of created) {
+      if (!d) continue;
+      emit("duty_assigned", {
+        recipient: assigneeId,
+        refModel: "Duty",
+        refId: d._id,
+        data: {
+          room: d.room,
+          date: d.date,
+          startTime: d.startTime,
+          endTime: d.endTime,
+        },
+      });
+    }
+  }
+
+  const finalGroup = await dcsGroupRepository.findById(groupId);
+  return { group: finalGroup, dutyIds: createdIds };
+};
+
+const claimGroup = (groupId, userId) =>
+  _performClaim(groupId, {
+    assigneeId: userId,
+    assignedById: userId,
+    isSelfAssigned: true,
+    notify: false,
+  });
+
+/**
+ * CS admin-assigns a DCS group to a specific teacher. Same transactional
+ * semantics as a self-claim, but the caller is the admin and the assignee
+ * is the target teacher; every created duty gets a `duty_assigned`
+ * notification.
+ */
+const adminClaimGroup = (groupId, targetTeacherId, adminId) => {
+  if (!targetTeacherId) throw new AppError("Teacher ID is required", 400);
+  return _performClaim(groupId, {
+    assigneeId: targetTeacherId,
+    assignedById: adminId,
+    isSelfAssigned: false,
+    notify: true,
+  });
 };
 
 const releaseGroup = async (groupId, userId, reason) => {
@@ -401,5 +457,6 @@ module.exports = {
   getRoomInvigilators,
   // Mutations
   claimGroup,
+  adminClaimGroup,
   releaseGroup,
 };

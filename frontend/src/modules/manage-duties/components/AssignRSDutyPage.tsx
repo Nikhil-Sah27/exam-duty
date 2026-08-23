@@ -1,24 +1,34 @@
 import { useState } from "react";
-import { LayoutGrid, List } from "lucide-react";
+import { useParams, Link } from "react-router-dom";
+import { ChevronRight, LayoutGrid, List } from "lucide-react";
+import { useTeacherDetails } from "../hooks";
+import { useTeacherDutyProgress } from "@/modules/duty-calculation/hooks/useDutyProgress";
 import DutyFilterBar from "@/modules/invigilator/select-duty/components/DutyFilterBar";
-import { useRSDutySelection } from "../hooks/useRSDutySelection";
-import RSDutyGroupSections from "../components/RSDutyGroupSections";
-import RSDutySelectionPanel from "../components/RSDutySelectionPanel";
 import DutyStatusLegend from "@/modules/shared/components/DutyStatusLegend";
+import RSDutyGroupSections from "@/modules/rs/select-duty/components/RSDutyGroupSections";
+import RSDutySelectionPanel from "@/modules/rs/select-duty/components/RSDutySelectionPanel";
 import type { DutyFilters } from "@/modules/invigilator/select-duty/types";
+import AssignDutyTeacherBanner from "./AssignDutyTeacherBanner";
+import { useAdminAssignRSGroups } from "../hooks/useAdminAssignRSGroups";
 
 type ViewMode = "grid" | "table";
 
 /**
- * RS Select Duty page. Same outer layout as the invigilator's page (header
- * with grid/table toggle, 2/3 split with selection panel on the right) but
- * the unit of work is a **room group**, not a single room.
+ * CS "Assign RS Duty" wizard — renders the same RS group grid the RS uses
+ * in their own Select Duty page, but scoped to a specific target teacher.
+ * Selecting a group and confirming calls `/duties/admin-assign-group`, which
+ * creates one duty per room in the group and notifies the teacher.
  *
- * The filter bar is reused as-is — its keys (date, examType, semester,
- * department) are role-agnostic and `DutyFilters` matches `RSDutyFilters`
- * shape exactly, so the same component drives both pages.
+ * Kept visually aligned with the RS-side page so a CS familiar with the
+ * teacher's view has zero re-learning to do.
  */
-export default function SelectDutyPage() {
+export default function AssignRSDutyPage() {
+  const { id: teacherId } = useParams<{ id: string }>();
+  const { data: teacher, isLoading: teacherLoading } = useTeacherDetails(
+    teacherId!,
+  );
+  const { data: progress } = useTeacherDutyProgress(teacherId);
+
   const {
     groups,
     filteredGroups,
@@ -39,20 +49,41 @@ export default function SelectDutyPage() {
     submit,
     isSubmitting,
     submitResults,
-  } = useRSDutySelection();
+  } = useAdminAssignRSGroups(teacherId);
 
   const [view, setView] = useState<ViewMode>("grid");
 
+  if (teacherLoading) return <p className="text-gray-500">Loading...</p>;
+  if (!teacher) return <p className="text-red-600">Teacher not found.</p>;
+
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">Select Duty</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Choose room groups to supervise. Each group covers up to 5 rooms in
-            the same block, exam, and time slot.
-          </p>
-        </div>
+      <nav className="flex items-center gap-1 text-sm text-gray-400">
+        <Link
+          to="/manage-duties"
+          className="transition-colors hover:text-gray-700"
+        >
+          Manage Duties
+        </Link>
+        <ChevronRight className="h-3.5 w-3.5" />
+        <Link
+          to={`/manage-duties/${teacher._id}`}
+          className="transition-colors hover:text-gray-700"
+        >
+          {teacher.name}
+        </Link>
+        <ChevronRight className="h-3.5 w-3.5" />
+        <span className="font-medium text-gray-700">Assign RS Group</span>
+      </nav>
+
+      <AssignDutyTeacherBanner teacher={teacher} progress={progress ?? null} />
+
+      <div>
+        <h2 className="text-xl font-bold text-gray-800">Select a Room Group</h2>
+        <p className="mt-1 text-sm text-gray-500">
+          Pick one or more room groups to assign to {teacher.name}. Each group
+          covers up to 5 rooms in the same block and time slot.
+        </p>
       </div>
 
       <DutyStatusLegend />
@@ -114,7 +145,9 @@ export default function SelectDutyPage() {
           )}
 
           {isLoading ? (
-            <p className="py-8 text-center text-sm text-gray-400">Loading groups...</p>
+            <p className="py-8 text-center text-sm text-gray-400">
+              Loading groups...
+            </p>
           ) : (
             <RSDutyGroupSections
               groups={filteredGroups}

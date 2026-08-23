@@ -331,7 +331,7 @@ const finalizeSEEPlan = async (data, userId) => {
   // Seat-sharing pre-flight — validate consumptions before we begin writing.
   await seatSharingService.validateConsumptions(globalSharedConsumptions);
 
-  return withOptionalTransaction(async (session) => {
+  const plan = await withOptionalTransaction(async (session) => {
     const sessionOpt = session ? { session } : {};
 
     // Reuse an existing (SEE, semester) group when one overlaps — otherwise

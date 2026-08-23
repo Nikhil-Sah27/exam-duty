@@ -1,7 +1,7 @@
-import { Link } from "react-router-dom";
 import { Teacher } from "../types";
 import { getRoleLabel, ROLE_BADGE_COLORS_LIGHT } from "@/shared/constants/roles";
 import type { UserRole } from "@/shared/lib/types";
+import AssignDutyRoleButton from "./AssignDutyRoleButton";
 
 interface TeacherHeaderProps {
   teacher: Teacher;
@@ -52,14 +52,14 @@ export default function TeacherHeader({ teacher }: TeacherHeaderProps) {
           </div>
         </div>
 
-        {/* Right: assign button — navigates into the visual assign-duty
-            wizard (exam grid → exam detail → room modal). */}
-        <Link
-          to={`/manage-duties/${teacher._id}/assign`}
-          className="shrink-0 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-500"
-        >
-          + Assign Duty
-        </Link>
+        {/* Right: assign button — single-role teachers get a direct link
+            into that role's flow; multi-role teachers get a picker so CS
+            can choose which role slot to assign for. */}
+        <AssignDutyRoleButton
+          teacherId={teacher._id}
+          teacherName={teacher.name}
+          teacherRoles={teacher.roles || []}
+        />
       </div>
     </div>
   );

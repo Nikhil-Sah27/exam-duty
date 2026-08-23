@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Building2, Calendar, Clock, DoorOpen, X } from "lucide-react";
 import type { RSUpcomingGroup } from "../utils/rsUpcomingGrouping";
 import { getTypeColor } from "@/modules/shared/exams/utils/examStatusUtils";
@@ -5,6 +6,7 @@ import {
   formatLongDate,
   formatTime,
 } from "@/modules/invigilator/upcoming-duties/utils/upcomingDutyUtils";
+import InvigilatorContactsSection from "@/modules/shared/duties/components/InvigilatorContactsSection";
 
 interface RSUpcomingGroupModalProps {
   open: boolean;
@@ -23,6 +25,17 @@ export default function RSUpcomingGroupModal({
   group,
   onClose,
 }: RSUpcomingGroupModalProps) {
+  // Collect ExamRoom ids for this group up-front so the invigilator lookup
+  // runs against a stable list (and the react-query key stays stable across
+  // re-renders while the modal is open).
+  const examRoomIds = useMemo(
+    () =>
+      (group?.rooms ?? [])
+        .map((r) => r.duty.examRoom?._id)
+        .filter((id): id is string => Boolean(id)),
+    [group],
+  );
+
   if (!open || !group) return null;
 
   const typeColor = getTypeColor(group.examType);
@@ -31,7 +44,7 @@ export default function RSUpcomingGroupModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
 
-      <div className="relative w-full max-w-lg rounded-xl bg-white shadow-xl">
+      <div className="relative w-full max-w-lg max-h-[90vh] overflow-hidden rounded-xl bg-white shadow-xl flex flex-col">
         <div className="flex items-start justify-between border-b border-gray-100 px-5 py-4">
           <div className="min-w-0 space-y-1.5">
             <div className="flex flex-wrap items-center gap-1.5">
@@ -59,7 +72,7 @@ export default function RSUpcomingGroupModal({
           </button>
         </div>
 
-        <div className="space-y-4 px-5 py-4">
+        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <MetaLine
               icon={<Calendar className="h-4 w-4" />}
@@ -127,6 +140,12 @@ export default function RSUpcomingGroupModal({
               invigilators assigned to each room.
             </p>
           </div>
+
+          <InvigilatorContactsSection
+            examRoomIds={examRoomIds}
+            title="Invigilator Contacts"
+            subtitle="People currently assigned to each room under your supervision."
+          />
         </div>
 
         <div className="border-t border-gray-100 px-5 py-3">

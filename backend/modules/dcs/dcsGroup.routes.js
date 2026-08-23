@@ -11,6 +11,7 @@ router.get("/groups/mine", controller.getMine);
 router.get("/groups/:id", controller.getById);
 router.get("/groups/:id/invigilators", controller.getRoomInvigilators);
 router.post("/groups/:id/claim", controller.claim);
+router.post("/groups/:id/admin-claim", controller.adminClaim);
 router.post("/groups/:id/release", controller.release);
 
 module.exports = router;
