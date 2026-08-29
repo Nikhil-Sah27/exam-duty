@@ -4,12 +4,12 @@ A role-based web application for planning exams and distributing invigilation du
 
 ## Roles
 
-Every user belongs to exactly one of four roles. Roles are stored on the `User` document (`backend/modules/auth/auth.model.js`) and drive both backend authorization and the frontend route tree.
+A user holds one *or more* of four roles. They live in `User.roles`, a non-empty array on the `User` document (`backend/modules/auth/auth.model.js`) — there is no single `role` field. A token is bound to one **active role** at a time: a single-role user gets it straight from login, a multi-role user picks one at `POST /auth/select-role` first. Authorization checks that active role, not membership in `roles`, so a user who holds two roles must be acting as the right one to pass. The active role also drives which frontend route tree they land in.
 
 | Role | Full Name | Grain | Responsibilities |
 | --- | --- | --- | --- |
 | **CS** | Controller of Superintendents | System | Full admin — creates exams, departments, rooms, users; reviews change requests; assigns duties directly. |
-| **DCS** | Deputy Controller of Superintendents | Room *group* (student-count sized, one DCS per ≤300 students) | Claims a supervision group; oversees every room in the group; can approve change requests. |
+| **DCS** | Deputy Controller of Superintendents | Room *group* (student-count sized, one DCS per ≤300 students) | Claims a supervision group; oversees every room in the group; submits `dcs_swap` requests. Approval is CS-only. |
 | **RS** | Room Superintendent | Room *group* (chunks of ≤5 rooms per building + time slot) | Claims a room group; supervises up to 5 rooms in the same block during a shift. |
 | **Invigilator** | Faculty Invigilator | Single room | Self-assigns or is assigned a single room per time slot; submits change requests. |
 
@@ -43,7 +43,7 @@ Group vs. individual is the key mental model: **DCS and RS work on whole groups*
   - *Room conflict:* scoped by the room's ObjectId (`roomRef`) so the same room number in a *different building* does NOT collide, and scoped by role so DCS/RS/Invigilator slots on the same room are independent.
 
 ### Change Requests
-Every role can propose a change; CS and DCS approve/reject. Approval is atomic — either the whole change lands or nothing does.
+Every role can propose a change; only CS approves or rejects (`PATCH /:id/approve` and `/:id/reject` are guarded `requireRole("cs")`). Approval is atomic — either the whole change lands or nothing does.
 
 | Scope | Type | Used by | Behavior on approval |
 | --- | --- | --- | --- |
@@ -73,7 +73,91 @@ Typed in-app notifications with a central emitter (`backend/modules/notification
 
 `duty_assigned`, `duty_cancelled`, `request_submitted`, `request_approved`, `request_rejected`, `duty_swapped`, `exam_deleted_duty_release`.
 
+Plus two more that the email/reminder work added: `duty_reminder` (scheduled) and `admin_message` (CS broadcast).
+
 Notifications reference either a `Duty` or a `ChangeRequest` for deep-linking. Unread count and read-all endpoints back the UI bell.
+
+### Email
+Every notification type above except `duty_reminder` is emailed through the same emitter that writes the in-app copy — modules keep calling `notification.emitter.js` and the email follows automatically (`backend/modules/email/email.dispatcher.js` decides which types warrant one).
+
+- **Optional by design.** With no SMTP config the app behaves exactly as before; each send is written to `EmailLog` with status `skipped_not_configured` and nothing is lost. Add the env vars, restart, and delivery starts.
+- **Transaction-safe.** Emails queued from inside a transaction are held by `shared/utils/postCommit.js` and flushed only after the commit — a rolled-back duty assignment never reaches an inbox.
+- **Never fails the request.** A dead SMTP host produces a `failed` row in `EmailLog`, not a 500. The in-app notification has already landed.
+- **Audited.** `EmailLog` records every attempt — `sent`, `failed`, `skipped_not_configured`, `skipped_opted_out` — with the subject, recipient, and error. `GET /api/reminders/health` surfaces a 7-day rollup.
+- **Opt-out.** `User.emailNotifications` (default `true`) gates only the email copy; in-app delivery is never affected. Users toggle it from the notification panel.
+
+Templates live in `backend/modules/email/email.templates.js` — table-based layout, inline styles, no external assets, and a plain-text twin for every HTML body.
+
+### Duty Reminders
+An in-process cron (`backend/modules/reminder/`) reminds every teacher about upcoming duties **1 week**, **1 day**, and **2 hours** ahead, on all three channels — in-app notification, email, and WhatsApp (`deliverDigest` in `reminder.service.js` fans out to one branch each).
+
+Two kinds of window, because the two kinds of statement differ:
+
+| Lead | Kind | Fires | Covers |
+| --- | --- | --- | --- |
+| `7d` / `1d` | daily | once, at `REMINDER_DAILY_HOUR` on the lead day | every duty on the target day, as one digest |
+| `2h` | slot | ~2 hours before each shift | the duties starting in that slot |
+
+Digesting is the point: a DCS supervising five rooms tomorrow gets one "you have 5 duties tomorrow" message, not five.
+
+Idempotency comes from one shared key suffix — `reminder:<lead>:<teacherId>:<bucket>` — claimed **once per channel, independently**, before that channel delivers: `notify:<key>` on `Notification`, the bare `<key>` on `EmailLog`, and `wa:<key>` on `WhatsAppLog`. Each of the three carries its own unique partial index, so a duplicate claim is a `11000` that the repository turns into "already delivered, skip".
+
+The per-channel split is deliberate. An earlier design let the `EmailLog` claim gate all of them, which coupled things that fail separately: a teacher with no email address consumed the shared claim and silently lost the in-app notification too. Three claims give three independent outcomes — and re-running is still safe, which is what lets the cron tick every 15 minutes (needed for the 2-hour window to land accurately) and lets an admin press **Run now** without risking duplicates.
+
+Known trade-off: a duty assigned *after* that day's digest has gone out shares the already-claimed bucket, so it gets no day-lead reminder of its own. It still triggers an immediate `duty_assigned` email and the 2-hour nudge.
+
+### Sending Notifications Manually
+CS gets a **Send Notification** page (`/notifications`) to message staff directly. Recipients are targeted by **role** and/or **department**; the two filters intersect, so "RS" + "CSE" means RS staff in CSE. An untargeted send is rejected — selecting every role is the explicit way to reach everyone.
+
+The screen resolves and displays the recipient list (and how many will actually be reached on each channel) before anything sends, and the same page carries the reminder scheduler's status, SMTP and WhatsApp health, recent send counts, a queue preview, and manual triggers.
+
+### WhatsApp
+The third delivery channel, hanging off the same emitter as email. Duty reminders, duty assigned/cancelled, change-request outcomes, and admin broadcasts all go out on it.
+
+Optional in exactly the way email is: with no provider configured, every message is recorded in `WhatsAppLog` as `skipped_not_configured` and nothing else changes.
+
+**Two interchangeable providers**, chosen with `WHATSAPP_PROVIDER`. The rest of the code only sees the adapter interface, so moving between them is an env change and a restart:
+
+| | `cloud_api` | `webjs` |
+| --- | --- | --- |
+| Library | none (Graph API over HTTPS) | `whatsapp-web.js` + headless Chromium |
+| Official | yes — Meta's WhatsApp Business Platform | no — automates WhatsApp Web |
+| State | stateless | session on disk, must persist |
+| Scaling | any number of instances | exactly one instance |
+| Memory | negligible | ~500MB-1GB for Chromium |
+| Setup | Meta Business account, verified number, approved templates | scan a QR |
+| Cost | per-conversation pricing | free |
+| Risk | none | violates WhatsApp ToS; the number can be banned |
+
+`whatsapp-web.js` is an **optional dependency** and is not installed by default, because of the Chromium download. The app reports the provider as unconfigured rather than crashing when it's absent. To enable:
+
+```bash
+cd backend && npm install whatsapp-web.js qrcode-terminal
+```
+
+**The 24-hour rule.** The Cloud API only allows free-form text to someone who messaged you in the last 24 hours — which a duty reminder never satisfies. Those sends therefore go out as **pre-approved templates**. `backend/modules/whatsapp/whatsapp.templates.js` declares, for each message, both the literal text and the ordered variables; register a matching template in Meta Business Manager under the declared `template.name` with `{{1}}`, `{{2}}`… where the variables go. `WHATSAPP_ALLOW_TEXT=true` bypasses templates for testing against a number that has just messaged the business.
+
+**Phone numbers.** `User.phone` is free text, so everything is normalised to E.164 by `phone.utils.js` before use — `"98450 12345"`, `"+91 98450-12345"` and `"09845012345"` all resolve to `+919845012345`, while anything ambiguous is rejected rather than guessed at. Bare numbers get `DEFAULT_COUNTRY_CODE` (default `+91`); numbers written with a `+` are taken as-is. `GET /api/whatsapp/coverage` reports how much of the roster is actually reachable — worth checking before relying on the channel, since a healthy provider still sends nothing to staff with no number on file.
+
+**Linking a `webjs` session.** The QR is printed to the server log *and* rendered inline on the Send Notification page, so linking doesn't mean reading a QR out of CloudWatch. It rotates every few seconds and the page refreshes it automatically.
+
+### Deploying on AWS
+The channel choice is really a deployment choice.
+
+**`cloud_api` runs anywhere** — EC2, ECS/Fargate, App Runner, Elastic Beanstalk, Lambda. It holds no state, so instances can come and go freely.
+
+**`webjs` constrains the architecture** and needs all of the following:
+
+- **A single instance.** Two processes sharing one WhatsApp session will fight and get the number logged out. No autoscaling group, no rolling deploys onto a second task; use `desiredCount: 1` and a `Recreate` deployment.
+- **A persistent volume** for `WHATSAPP_SESSION_PATH`. An EBS volume on EC2, or EFS for ECS. Anything ephemeral means re-scanning the QR on every deploy — including every crash-restart.
+- **Chromium and its system libraries.** The bundled download needs `libnss3`, `libatk-1.0-0`, `libatk-bridge2.0-0`, `libcups2`, `libdrm2`, `libxkbcommon0`, `libxcomposite1`, `libxdamage1`, `libxfixes3`, `libxrandr2`, `libgbm1`, `libpango-1.0-0`, `libcairo2`, `libasound2` and friends. On Amazon Linux 2023 it is usually less painful to `dnf install chromium` and point `PUPPETEER_EXECUTABLE_PATH` at it.
+- **Real memory.** Chromium plus Node needs ~2GB to be comfortable; `t3.micro` will OOM. `t3.small` is the realistic floor, `t3.medium` comfortable.
+- **`--no-sandbox`**, already set in the adapter, since the process rarely has the kernel namespaces Chrome's sandbox wants.
+- **A human with the phone**, at first link and again whenever the session drops (phone offline for days, WhatsApp logging the device out, a Chromium crash). It is not a set-and-forget component.
+
+It also violates the WhatsApp Terms of Service. For an internal pilot on one box that is a considered risk; for the institution's main number, a ban takes out the channel entirely.
+
+**The pragmatic path**: run `webjs` on a single EC2 instance while piloting, and switch `WHATSAPP_PROVIDER=cloud_api` before the system carries real exam load. No application code changes between the two.
 
 ### Exam Cleanup
 Deleting an exam group, schedule, or room cascades in a single transaction (`backend/modules/exam-cleanup/services/examDeletionService.js`): all dependent duties are cancelled, open change requests are marked `cancelled_exam_deleted`, seat-sharing allocations are released (and source rooms' `remainingSeats` restored), and affected teachers receive `exam_deleted_duty_release` notifications.
@@ -84,7 +168,7 @@ Backend uses Mongoose models under `backend/modules/*/[name].model.js`.
 
 | Model | Purpose |
 | --- | --- |
-| `User` | Auth principal with `role: cs | dcs | rs | invigilator`, department, designation, `isActive`. |
+| `User` | Auth principal with `roles: [cs | dcs | rs | invigilator]` (non-empty array), department, designation, `isActive`. |
 | `Department` / `Semester` / `Course` / `ElectiveGroup` | Academic taxonomy. `Course.courseType ∈ {core, professional_elective, open_elective}`. |
 | `Building` / `Room` | Physical infrastructure. `Room` is unique per `(building, roomNumber)`. |
 | `Exam` | Legacy single-exam entity. Retained for old flows; new work uses `ExamGroup`. |
@@ -117,7 +201,8 @@ Backend uses Mongoose models under `backend/modules/*/[name].model.js`.
 3. **Upcoming Duties** — one card per claimed group with the room list and (per room) the assigned invigilator's contact.
 4. **Change Requests** — swap a whole claimed group for another open group (`type = dcs_swap`). Cannot swap individual rooms.
 5. **Exams** — read-only exam browser.
-6. May approve/reject change requests raised by others (has admin privileges alongside CS).
+
+A DCS submits change requests like everyone else; reviewing them is CS-only.
 
 ### RS — Room Group Supervisor
 1. **Dashboard** — group-oriented hero band (upcoming groups, total rooms, buildings).
@@ -154,10 +239,14 @@ exam-duty/
 │   │   ├── exam/                    # Legacy Exam + ExamGroup/Schedule/Room
 │   │   ├── create-exams/            # CIE + SEE finalize (transactional)
 │   │   ├── duty/                    # Assign/self-assign/cancel, conflict scan
+│   │   ├── duty-calculation/        # On-demand invigilator workload targets + progress
 │   │   ├── dcs/                     # DCSGroup formation, claim, release
 │   │   ├── change-request/          # duty / dcs_group / rs_group scopes
 │   │   ├── seat-sharing/            # Shareable rooms + atomic allocation
 │   │   ├── notification/            # Emitter + typed notifications
+│   │   ├── email/                   # SMTP transport, templates, EmailLog audit
+│   │   ├── whatsapp/                # Provider adapters, templates, WhatsAppLog audit
+│   │   ├── reminder/                # Reminder cron, lead windows, per-channel claims
 │   │   ├── exam-cleanup/            # Cascade delete + release
 │   │   ├── audit/                   # Stub
 │   │   └── report/                  # Stub
@@ -179,6 +268,8 @@ exam-duty/
 │   │   │   ├── infrastructure/      # Buildings + rooms
 │   │   │   ├── change-requests/     # Admin review page
 │   │   │   ├── notifications/       # Bell + list
+│   │   │   ├── reminders/           # Scheduler status card, health + preview + run now
+│   │   │   ├── whatsapp/            # Provider health card, QR, coverage, test send
 │   │   │   ├── duties/              # Duty types + admin actions
 │   │   │   ├── invigilator/         # Invigilator role tree
 │   │   │   │   ├── routes/          # /invigilator/*
@@ -214,7 +305,7 @@ exam-duty/
 ├── README.md
 ├── APP_FLOW.md                      # End-to-end walkthrough
 ├── CREDENTIALS.md                   # Seeded test logins
-└── NGROK_SETUP_GUIDE.md             # Optional public tunnel setup
+└── NGROK_SETUP_GUIDE.md             # Optional public tunnel setup (stale — pre-Vite)
 ```
 
 Each backend module follows the **controller → service → repository → model** pattern. Each frontend feature module owns its own `components/`, `hooks/`, `services/`, `types.ts`, and (where useful) `utils/` — cross-module imports are one-way from role-specific → shared.
@@ -238,13 +329,55 @@ cd backend
 npm install
 ```
 
-Create `backend/.env`:
+Create `backend/.env` — copy `backend/.env.example` and fill it in:
 ```env
-PORT=5000
+PORT=5001               # not 5000 — macOS gives that to ControlCenter (AirPlay Receiver)
 MONGO_URI=mongodb://localhost:27017/exam-duty
 NODE_ENV=development
 JWT_SECRET=change-me
 JWT_EXPIRES_IN=7d
+
+# --- Email (optional) -------------------------------------------------
+# Leave these out and the app runs exactly as before: in-app notifications
+# still fire and every would-be email is recorded in EmailLog as
+# `skipped_not_configured`. Fill them in and restart to start sending.
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+SMTP_SECURE=            # "true" to force TLS-on-connect; defaults to port===465
+MAIL_FROM=Exam Duty <no-reply@yourdomain.edu>
+MAIL_REPLY_TO=
+APP_URL=http://localhost:5173   # used for the links inside emails
+EMAIL_ENABLED=true      # "false" kills sending even when SMTP is set
+
+# --- Duty reminders ---------------------------------------------------
+REMINDERS_ENABLED=true  # "false" disables the cron; manual runs still work
+REMINDER_CRON=*/15 * * * *
+REMINDER_DAILY_HOUR=18  # local hour the 1-week / 1-day digests go out
+REMINDER_TICK_MS=900000 # catch-up slack; keep >= the cron interval
+REMINDER_TIMEZONE=      # IANA zone, e.g. Asia/Kolkata. Applies ONLY to the node-cron
+                        # schedule (and the /api/reminders/health readout). Every window
+                        # calculation — REMINDER_DAILY_HOUR included — uses server local
+                        # time, so on a server whose clock is in another zone the digests
+                        # still go out at the SERVER's local hour, not this one.
+
+# --- WhatsApp (optional) ----------------------------------------------
+# Same story as email: leave unset and every message is logged and skipped.
+WHATSAPP_PROVIDER=          # cloud_api | webjs | none
+DEFAULT_COUNTRY_CODE=+91    # applied to numbers stored without one
+
+# ...if WHATSAPP_PROVIDER=cloud_api (recommended for AWS):
+WHATSAPP_PHONE_NUMBER_ID=
+WHATSAPP_ACCESS_TOKEN=
+WHATSAPP_API_VERSION=v21.0
+WHATSAPP_TEMPLATE_LANG=en
+WHATSAPP_ALLOW_TEXT=false   # true sends free-form instead of templates (testing only)
+
+# ...if WHATSAPP_PROVIDER=webjs:
+WHATSAPP_SESSION_PATH=./.wwebjs_auth   # MUST be on a persistent volume
+WHATSAPP_HEADLESS=true
+PUPPETEER_EXECUTABLE_PATH=             # system Chromium, if not using the bundled one
 ```
 
 **Frontend**
@@ -253,7 +386,15 @@ cd ../frontend
 npm install
 ```
 
-(No `.env` needed for local dev — the Vite proxy points at `http://localhost:5000` by default.)
+(No `.env` needed for local dev — the Vite dev and preview servers proxy `/api/*` to
+`http://localhost:5001` by default, matching the backend's default `PORT`. If the backend
+runs on some other port, copy `frontend/.env.example` to `frontend/.env.local` and point
+`DEV_API_PROXY_TARGET` at it.
+
+That proxy target is a dev-server setting and never reaches the browser. The client's own
+base URL is a separate variable, `VITE_API_URL`, defaulting to the same-origin `/api` —
+set it only when a built app must call a backend on another origin, with no Vite proxy in
+front of it. Both are documented in `frontend/.env.example`.)
 
 ### Running
 
@@ -266,7 +407,7 @@ cd frontend && npm run dev
 ```
 
 - Frontend: http://localhost:5173
-- Backend API: http://localhost:5000
+- Backend API: http://localhost:5001
 
 ### Seed Data
 
@@ -286,7 +427,7 @@ Test credentials (from `CREDENTIALS.md`):
 | CS | `admin@examduty.com` | `Admin123` |
 | DCS | `dcs@examduty.com` | `Dcs12345` |
 | RS | `rs@examduty.com` | `Rs123456` |
-| Invigilator | `invigilator@examduty.com` | `Invig123` |
+| RS + Invigilator | `invigilator@examduty.com` | `Invig123` |
 
 ### Optional: Ngrok
 
@@ -297,7 +438,7 @@ cd frontend && npx vite build && npx vite preview --port 3001
 ngrok http 3001
 ```
 
-See `NGROK_SETUP_GUIDE.md` for troubleshooting.
+`NGROK_SETUP_GUIDE.md` has background on the class of problems a single tunnel creates, but it was written against the old Next.js frontend — its ports, config file, and env names are all out of date, so read it for the shape of the fix, not the steps.
 
 ## API Reference
 
@@ -307,7 +448,8 @@ All endpoints are prefixed with `/api`. All routes except `POST /auth/register`,
 | Method | Path | Description |
 | --- | --- | --- |
 | POST | `/register` | Create a user account. |
-| POST | `/login` | Return `{ user, token }`. |
+| POST | `/login` | Returns `{ user, token, tempToken, requiresRoleSelection }`. Single-role user: `token` is set, `tempToken` null. Multi-role user: `token` is **null**, `tempToken` set, `requiresRoleSelection` true. |
+| POST | `/select-role` | Exchange a `tempToken` for a real token bound to the chosen role — returns `{ user, token }`. Mandatory second step for a multi-role user, and the only route that accepts a `tempToken`. 403 if the role isn't in the user's `roles`. |
 | GET | `/me` | Current user profile. |
 
 ### Users (`/users`)
@@ -339,11 +481,15 @@ All endpoints are prefixed with `/api`. All routes except `POST /auth/register`,
 ### Create Exams (`/create-exams`)
 | Method | Path | Description |
 | --- | --- | --- |
+| GET | `/` | Module status ping — static `"Create Exams module initialized"`. |
 | GET | `/cie/departments-data` | Depts + semesters + courses for a semester. |
 | POST | `/cie/calculate-dates` | Auto-calculate dates from shifts. |
 | GET | `/cie/rooms` | Available rooms by building. |
-| POST | `/cie/finalize` | One-call: create group + schedules + rooms + DCS groups + sharing config. |
-| POST | `/see/finalize` | SEE equivalent. |
+| POST | `/cie/plan` | Legacy step 1 — creates the `ExamGroup`, its `ExamSchedule`s, and the per-department plan entries. No rooms. Kept for the seed scripts. |
+| POST | `/cie/assign-rooms` | Legacy step 2 — creates the `ExamRoom`s for an already-planned schedule. |
+| POST | `/cie/finalize` | One-call: create group + schedules + rooms + DCS groups + sharing config. Replaces the two-step pair above. |
+| POST | `/see/plan` | SEE equivalent of `/cie/plan`, for a single department. |
+| POST | `/see/finalize` | SEE equivalent of `/cie/finalize`. |
 
 ### Duties (`/duties`)
 | Method | Path | Description |
@@ -351,6 +497,8 @@ All endpoints are prefixed with `/api`. All routes except `POST /auth/register`,
 | POST | `/self-assign` | Invigilator self-assign (single room). |
 | POST | `/self-assign-group` | RS/DCS self-assign a whole group. |
 | POST | `/admin-assign` | CS forces a teacher into a slot. |
+| POST | `/admin-assign-group` | Assign a named teacher a whole group — one duty per `examRoom`, transactionally. RS/DCS roles only; anything else is a 400. |
+| POST | `/invigilators-for-rooms` | Assigned-invigilator contact list for up to 100 `examRoom` ids. |
 | GET | `/` · `/:id` | List / get. |
 | PATCH | `/:id/cancel` | Cancel with notification. |
 
@@ -360,6 +508,7 @@ All endpoints are prefixed with `/api`. All routes except `POST /auth/register`,
 | GET | `/groups` · `/groups/mine` · `/groups/:id` | List / mine / by id. |
 | GET | `/groups/:id/invigilators` | Contact list for rooms in the group. |
 | POST | `/groups/:id/claim` · `/groups/:id/release` | Ownership lifecycle. |
+| POST | `/groups/:id/admin-claim` | Claim a group *for* the teacher in `body.teacher` instead of the caller; notifies them. |
 
 ### Change Requests (`/change-requests`)
 | Method | Path | Description |
@@ -367,7 +516,7 @@ All endpoints are prefixed with `/api`. All routes except `POST /auth/register`,
 | POST | `/` | Submit — routes internally by `type` (`swap`/`drop`/`move`/`dcs_swap`/`rs_swap`). |
 | GET | `/` · `/mine` · `/:id` | List all / mine / by id. |
 | GET | `/replacements/:dutyId` | Vacant invigilator slots eligible for a `move`. |
-| PATCH | `/:id/approve` · `/:id/reject` | Review (CS/DCS). |
+| PATCH | `/:id/approve` · `/:id/reject` | **CS only** (`requireRole("cs")`) — any other active role gets a 403. |
 
 ### Departments (`/departments`)
 CRUD for `Department`, `Semester` (`/semesters`), `ElectiveGroup` (`/elective-groups`), `Course` (`/courses`). Plus `GET /:id/stats`.
@@ -388,12 +537,48 @@ CRUD for `Department`, `Semester` (`/semesters`), `ElectiveGroup` (`/elective-gr
 | DELETE | `/allocations/:id` | Release an allocation (restores remainingSeats). |
 | GET | `/by-exam-room/:examRoomId` · `/by-schedule/:scheduleId` | Read views. |
 
+### Duty Calculation (`/duty-calculation`)
+
+Invigilator workload targets and progress, computed on demand from current DB state — nothing is persisted, so every read recomputes. Eligibility is strictly designation-based: only `Assistant Professor` and `Associate Professor` count (`ELIGIBLE_DESIGNATIONS` in `dutyCalculation.service.js`); every other designation, `Professor` included, is out.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/my-progress` | Caller's own target vs. completed duties — backs the dashboard widget. |
+| GET | `/teacher/:teacherId/progress` | The same figures for a named teacher. |
+| GET | `/all-teachers` | Cohort table. Filters: `role`, `department`, `eligibleOnly`. |
+| GET | `/institution` | Institution-wide totals plus per-department and per-semester breakdown. |
+| POST | `/recalculate` | Force-recompute alias — same payload as `/institution`. |
+| GET | `/semester/:semesterId` | Semester-level detail (powers the Target tooltip). |
+| GET | `/department/:departmentId` | Department-level detail. |
+
 ### Notifications (`/notifications`)
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/` · `/unread-count` | Read. |
 | PATCH | `/read-all` · `/:id/read` | Mark read. |
 | DELETE | `/` · `/:id` | Delete all / one. |
+| POST | `/broadcast/preview` | **CS.** Resolve role/department filters to a recipient list. No side effects. |
+| POST | `/broadcast` | **CS.** Send an in-app notification (and optional email / WhatsApp) to the targeted staff. |
+| PATCH | `/preferences` | Toggle the caller's own email and/or WhatsApp copies. |
+| PATCH | `/preferences/email` | Legacy alias for the above. |
+
+### Reminders (`/reminders`)
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/my-schedule` | Caller's upcoming duties with the instant each reminder is due. |
+| POST | `/run` | **CS.** Trigger the reminder job now. Idempotent — already-sent digests are skipped. |
+| GET | `/preview` | **CS.** What a run right now would send, flagged with `alreadySent`. |
+| GET | `/health` | **CS.** Scheduler state, SMTP reachability, 7-day email counts. |
+
+### WhatsApp (`/whatsapp`) — all CS-only
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/health` | Provider, connection state, send mode, 7-day message counts. |
+| GET | `/qr` | Pending link QR (raw payload + rendered PNG data URL). `webjs` only. |
+| GET | `/coverage` | How much of the roster has a usable phone number. |
+| GET | `/logs` | Recent sends, numbers masked. |
+| POST | `/restart` | Re-initialise the provider after a session drop. |
+| POST | `/test` | Send a real test message to one user. |
 
 ## Key Design Decisions
 

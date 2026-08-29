@@ -26,6 +26,14 @@ const formatTime12h = (hhmm) => {
   return `${hour12}:${mm} ${period}`;
 };
 
+// Human phrasing per reminder lead time. Keep in sync with the same map in
+// email.templates.js and the REMINDER_WINDOWS in the reminder module.
+const LEAD_PHRASES = {
+  "7d": "in one week",
+  "1d": "tomorrow",
+  "2h": "in about 2 hours",
+};
+
 const templates = {
   duty_assigned: ({ room, date, startTime, endTime }) => ({
     title: "New Duty Assigned",
@@ -55,6 +63,40 @@ const templates = {
   duty_swapped: () => ({
     title: "Duty Swap — You Have a New Duty",
     message: "A duty has been swapped to you. Check your duty list for details.",
+  }),
+
+  /**
+   * Scheduled duty reminder. Digest-shaped: one notification covers every
+   * duty in the reminder window, matching the email, so a teacher with four
+   * rooms tomorrow gets one row in the bell rather than four.
+   */
+  duty_reminder: ({ lead, duties = [] }) => {
+    const phrase = LEAD_PHRASES[lead] || "soon";
+    const count = duties.length;
+    const plural = count === 1 ? "duty" : "duties";
+
+    const lines = [`You have ${count} ${plural} ${phrase}:`, ""];
+    for (const d of duties) {
+      const parts = [];
+      if (d.date) parts.push(formatLongDate(d.date));
+      if (d.startTime && d.endTime) {
+        parts.push(`${formatTime12h(d.startTime)} – ${formatTime12h(d.endTime)}`);
+      }
+      if (d.roomLabel || d.room) parts.push(d.roomLabel || d.room);
+      lines.push(`• ${parts.join(" · ")}`);
+    }
+
+    return {
+      title: count === 1 ? `Upcoming Duty — ${phrase}` : `${count} Upcoming Duties — ${phrase}`,
+      message: lines.join("\n"),
+    };
+  },
+
+  // Free-text message from CS. Title and body are supplied by the sender and
+  // pass through verbatim — the compose form is the only validation point.
+  admin_message: ({ title, message }) => ({
+    title: title || "Message from the Exam Duty office",
+    message: message || "",
   }),
 
   // Emitted when CS/Admin deletes an exam (group/schedule/room) and the

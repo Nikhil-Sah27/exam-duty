@@ -5,15 +5,17 @@ import type { UserRole } from "@/shared/lib/types";
  *
  * Only duty-eligible roles that have a working admin-assign UI appear here.
  * Add a role's builder and the picker + button surface it automatically —
- * no other file needs to change.
+ * only the picker's label/icon maps need the new entry.
+ *
+ * `satisfies` rather than a type annotation: an annotated
+ * Partial<Record<UserRole, ...>> would make `keyof` below every UserRole —
+ * cs included, which holds no duty slot and has no assign flow.
  */
-export const ASSIGN_DUTY_ROUTE_BY_ROLE: Partial<
-  Record<UserRole, (teacherId: string) => string>
-> = {
+export const ASSIGN_DUTY_ROUTE_BY_ROLE = {
   dcs: (id) => `/manage-duties/${id}/assign-dcs`,
   rs: (id) => `/manage-duties/${id}/assign-rs`,
   invigilator: (id) => `/manage-duties/${id}/assign`,
-};
+} satisfies Partial<Record<UserRole, (teacherId: string) => string>>;
 
 export type AssignableDutyRole = keyof typeof ASSIGN_DUTY_ROUTE_BY_ROLE;
 
@@ -36,5 +38,5 @@ export function assignDutyHrefFor(
   teacherId: string,
   role: AssignableDutyRole,
 ): string {
-  return ASSIGN_DUTY_ROUTE_BY_ROLE[role]!(teacherId);
+  return ASSIGN_DUTY_ROUTE_BY_ROLE[role](teacherId);
 }

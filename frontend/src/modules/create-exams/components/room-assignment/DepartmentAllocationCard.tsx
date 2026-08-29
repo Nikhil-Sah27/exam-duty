@@ -66,6 +66,13 @@ export default function DepartmentAllocationCard({
 
   const { students, assignedRooms, departmentCode, courseName, courseId } = allocation;
 
+  // Unused seats from other departments in same slot. Must stay above the
+  // "no exam scheduled" early return so the hook order is stable across renders.
+  const unusedSeats = useMemo(
+    () => getUnusedSeatsInSlot(slot, allocation.departmentId),
+    [slot, allocation.departmentId]
+  );
+
   // No exam scheduled
   if (!courseId) {
     return (
@@ -81,7 +88,7 @@ export default function DepartmentAllocationCard({
   // All business-logic derived from utils — component only handles presentation
   const stats = getDeptDisplayStats(allocation, avgStudentsPerClass);
   const {
-    ownCapacity, effectiveCapacity, effectiveRemaining,
+    effectiveCapacity, effectiveRemaining,
     sharedReceived, globalSharedReceived: globalSharedReceivedCount,
     extra, shareableExtra, capacityMet, needed,
     progressPct, ownPct,
@@ -101,11 +108,6 @@ export default function DepartmentAllocationCard({
       ? "border-amber-200"
       : "border-gray-200";
 
-  // Unused seats from other departments in same slot
-  const unusedSeats = useMemo(
-    () => getUnusedSeatsInSlot(slot, allocation.departmentId),
-    [slot, allocation.departmentId]
-  );
   return (
     <>
       <div className={`rounded-lg border-2 bg-white transition-colors ${borderColor}`}>

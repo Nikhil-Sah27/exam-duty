@@ -1,5 +1,10 @@
 import api from "@/shared/lib/api";
 import {
+  BroadcastPreview,
+  BroadcastRequest,
+  BroadcastResult,
+  BroadcastTarget,
+  ChannelPreferences,
   Notification,
   NotificationListResponse,
   UnreadCountResponse,
@@ -35,4 +40,45 @@ export const deleteNotification = async (id: string): Promise<void> => {
 // userId, so the deletion is intrinsically scoped to "me".
 export const deleteAllNotifications = async (): Promise<void> => {
   await api.delete("/notifications");
+};
+
+/* ---------------------------------------------------------------- broadcast */
+
+/**
+ * Resolve the current targeting filters to a recipient list. POST because the
+ * filters are a body, not a query string — the call itself has no side effects.
+ */
+export const previewBroadcast = async (
+  target: BroadcastTarget,
+): Promise<BroadcastPreview> => {
+  const res = await api.post<{ success: boolean; data: BroadcastPreview }>(
+    "/notifications/broadcast/preview",
+    target,
+  );
+  return res.data.data;
+};
+
+export const sendBroadcast = async (
+  payload: BroadcastRequest,
+): Promise<BroadcastResult> => {
+  const res = await api.post<{ success: boolean; data: BroadcastResult }>(
+    "/notifications/broadcast",
+    payload,
+  );
+  return res.data.data;
+};
+
+/**
+ * Toggle the caller's own email / WhatsApp copies. The backend derives the
+ * user from the JWT, so this can only ever change your own preferences.
+ * Fields are individually optional — send only what is changing.
+ */
+export const updateChannelPreferences = async (
+  prefs: Partial<ChannelPreferences>,
+): Promise<ChannelPreferences> => {
+  const res = await api.patch<{ success: boolean; data: ChannelPreferences }>(
+    "/notifications/preferences",
+    prefs,
+  );
+  return res.data.data;
 };

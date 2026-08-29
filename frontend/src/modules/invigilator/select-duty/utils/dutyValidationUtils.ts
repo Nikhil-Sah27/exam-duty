@@ -1,5 +1,4 @@
 import type { Duty } from "@/modules/duties/types";
-import type { RoomDutyFlags } from "@/modules/shared/exams/types/exam.types";
 import {
   findTimeConflict as sharedFindTimeConflict,
   describeConflict,

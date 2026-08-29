@@ -1,4 +1,4 @@
-import type { CourseWithGroup, DepartmentData, RoutineEntry } from "../types";
+import type { DepartmentData, RoutineEntry } from "../types";
 
 // Tagged assignment tokens sent to the backend. Kept as string literals so
 // the dropdown <select> can store them directly.

@@ -1,3 +1,12 @@
+> **Stale — this describes the pre-Vite setup.** It was written when the frontend
+> was a Next.js app (port 3001) proxying to an Express backend on port 5000. The
+> frontend is now Vite + React (dev server on 5173, `vite preview` on whatever
+> port you pass it) and the backend defaults to 5001, so the `next.config.ts`
+> rewrites, the port numbers, and the env-var names below no longer match the
+> code. The shape of the problem — one tunnel, API calls reaching the backend
+> through the frontend's own origin — still holds; treat every specific below as
+> history until this guide is rewritten.
+
 # Ngrok Setup Guide for Next.js + Express Projects
 
 ## The Problem

@@ -19,13 +19,13 @@ npm run preview   # Serve the production build
 npm run lint      # ESLint
 ```
 
-The dev server proxies `/api/*` to `http://localhost:5000` (the backend). No `.env` is required for local dev.
+The dev and preview servers proxy `/api/*` to the backend at `http://localhost:5001` by default (`:5000` is held by ControlCenter on macOS). No `.env` is required for the default setup; if the backend runs elsewhere, copy `.env.example` to `.env.local` and set `DEV_API_PROXY_TARGET`. That variable only steers the Vite server's proxy — to point a built app at a backend on another origin, set `VITE_API_URL` instead (it becomes the axios `baseURL`; see `.env.example`).
 
 ## Layout
 
 ```
 src/
-├── App.tsx                  # Router root — public /login + protected admin + role trees
+├── App.tsx                  # Router root — public /login + /select-role, protected admin + role trees
 ├── main.tsx                 # Vite entry, QueryClient provider
 ├── modules/
 │   ├── auth/                # Login form + hooks
@@ -66,7 +66,9 @@ Each role has its own routed subtree under `modules/<role>/routes/*Routes.tsx`.
 
 ## Auth Flow
 
-`ProtectedLayout` (`shared/components/ProtectedLayout.tsx`) wraps every protected route in `AuthGuard`. `AuthGuard` reads the persisted token from `localStorage`, hydrates the Zustand `useAuthStore`, and either redirects to `/login` or fetches `/api/auth/me` to hydrate the user profile. When the user's `role` is operational (`invigilator`/`rs`/`dcs`), the admin shell forwards them to `/<role>/dashboard`.
+`ProtectedLayout` (`shared/components/ProtectedLayout.tsx`) wraps every protected route in `AuthGuard`. `AuthGuard` reads the persisted token from `localStorage`, hydrates the Zustand `useAuthStore`, and either redirects to `/login` or fetches `/api/auth/me` to hydrate the user profile. The admin shell then checks `getRoleConfig(user?.activeRole)` — for an operational active role (`invigilator`/`rs`/`dcs`) it redirects to that role's `defaultPath` (`/<role>/dashboard`) before any admin UI renders; CS has no role config and stays in the shell.
+
+`activeRole` is the single role the current token is bound to, not the user's full set: `User.roles` is an array, and a user holding more than one logs in with a `tempToken` and must choose at `/select-role` (`RoleSelectionPage`), which exchanges it for a role-bound token. `useAuthStore` keeps `token` and `tempToken` separate; the axios interceptor prefers `token` and falls back to `tempToken`.
 
 ## Key Utilities
 

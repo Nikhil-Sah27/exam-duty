@@ -328,13 +328,15 @@ export function dcsGroupToSummary(
     group.assignedTeacher && group.assignedTeacher._id === myUserId,
   );
   const occupied = Boolean(group.assignedTeacher) && !assignedToMe;
-  const assignedTo = group.assignedTeacher
+  // The group's teacher comes back as a lite shape with no roles array, but
+  // whoever holds a DCS group holds it as DCS — enough for the card's badge.
+  const assignedTo: AssigneePublic | null = group.assignedTeacher
     ? {
         _id: group.assignedTeacher._id,
         name: group.assignedTeacher.name,
         email: group.assignedTeacher.email,
         phone: group.assignedTeacher.phone ?? null,
-        role: "dcs" as const,
+        roles: ["dcs"],
         department: group.assignedTeacher.department ?? null,
         designation: null,
       }

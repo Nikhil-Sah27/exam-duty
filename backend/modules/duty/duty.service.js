@@ -507,7 +507,8 @@ const cancelDuty = async (id, cancelReason) => {
   });
 
   emit("duty_cancelled", {
-    recipient: duty.teacher,
+    // findById populates `teacher`; the email/WhatsApp dispatchers need the id.
+    recipient: duty.teacher?._id || duty.teacher,
     refModel: "Duty",
     refId: duty._id,
     data: { room: duty.room, date: duty.date },

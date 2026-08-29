@@ -4,9 +4,7 @@ import { ChevronRight, Plus } from "lucide-react";
 import {
   useExamGroupDetails,
   useCreateSchedule,
-  useDeleteSchedule,
   useAddExamRoom,
-  useRemoveExamRoom,
   useExamDutyStatus,
 } from "../hooks";
 import { ExamGroupStatus } from "../types";
@@ -34,9 +32,7 @@ export default function ExamDetails() {
   const { data: dutyStatusMap } = useExamDutyStatus(id!);
 
   const createScheduleMutation = useCreateSchedule();
-  const deleteScheduleMutation = useDeleteSchedule(id!);
   const addRoomMutation = useAddExamRoom(id!);
-  const removeRoomMutation = useRemoveExamRoom(id!);
 
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [roomModalOpen, setRoomModalOpen] = useState(false);

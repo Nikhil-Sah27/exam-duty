@@ -3,7 +3,6 @@ import { useState, FormEvent } from "react";
 import { useAdminAssignDuty, useSelfAssignDuty } from "../hooks";
 import { useExams } from "@/modules/exams/hooks";
 import { useUsers } from "@/modules/users/hooks";
-import { useAuthStore } from "@/shared/store/auth.store";
 import { Input, Select, Button, Modal, ErrorAlert } from "@/shared/components";
 
 interface AssignDutyModalProps {
@@ -19,9 +18,6 @@ export default function AssignDutyModal({ open, onClose }: AssignDutyModalProps)
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [isSelf, setIsSelf] = useState(false);
-
-  const user = useAuthStore((s) => s.user);
-  const canAssignOthers = user?.activeRole === "cs" || user?.activeRole === "dcs";
 
   const { data: exams } = useExams();
   const { data: users } = useUsers();

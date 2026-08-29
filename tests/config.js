@@ -4,7 +4,7 @@
  * If using ngrok, set it to your ngrok URL.
  */
 const CONFIG = {
-  BASE_URL: process.env.API_URL || "http://localhost:5000/api",
+  BASE_URL: process.env.API_URL || "http://localhost:5001/api",
   ADMIN_EMAIL: "admin@examduty.com",
   ADMIN_PASSWORD: "Admin123",
 };

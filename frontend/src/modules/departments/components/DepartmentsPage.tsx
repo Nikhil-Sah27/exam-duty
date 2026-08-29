@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Plus } from "lucide-react";
 import { useDepartments, useCreateDepartment } from "../hooks";
 import { useDepartmentStats } from "../hooks";
-import { Department, DepartmentStats } from "../types";
+import { DepartmentStats } from "../types";
 import DepartmentGrid from "./DepartmentGrid";
 import DepartmentModal from "./DepartmentModal";
 

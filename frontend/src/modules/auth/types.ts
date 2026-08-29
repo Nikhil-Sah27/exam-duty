@@ -10,6 +10,8 @@ export interface RegisterRequest {
   name: string;
   email: string;
   password: string;
+  // Required by the User model — registering without it fails with 400.
+  phone: string;
   designation?: string;
   roles?: UserRole[];
 }

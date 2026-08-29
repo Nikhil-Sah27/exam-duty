@@ -9,6 +9,7 @@ import {
   DoorOpen,
   BarChart3,
   ScrollText,
+  BellRing,
   type LucideIcon,
 } from "lucide-react";
 import { UserRole } from "./types";
@@ -29,6 +30,9 @@ export const navItems: NavItem[] = [
   { path: "/requests", label: "Change Requests", icon: ArrowLeftRight, roles: ADMIN_ROLES },
   { path: "/manage-duties", label: "Manage Duties", icon: ClipboardList, roles: ADMIN_ROLES },
   { path: "/users", label: "Teachers", icon: Users, roles: ADMIN_ROLES },
+  // CS-only: broadcasting to staff and controlling the reminder job are
+  // Controller responsibilities, not DCS/RS ones.
+  { path: "/notifications", label: "Send Notification", icon: BellRing, roles: ["cs"] },
   { path: "/departments", label: "Departments", icon: Building2, roles: ADMIN_ROLES },
   { path: "/infrastructure", label: "Rooms & Buildings", icon: DoorOpen, roles: ADMIN_ROLES },
   { path: "/reports", label: "Reports", icon: BarChart3, roles: ADMIN_ROLES },

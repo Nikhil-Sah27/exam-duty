@@ -12,7 +12,7 @@ npm install
 ## Run Tests
 
 ```bash
-# Run ALL tests (against localhost:5000)
+# Run ALL tests (against localhost:5001 — the backend's default PORT)
 npm test
 
 # Run against a remote server (ngrok, deployed, etc.)
@@ -36,7 +36,7 @@ npm run test:create-exams
 1. **MongoDB** must be running
 2. **Backend server** must be running (`npm run dev` from backend folder)
 3. **Bootstrap admin** - the test suite will auto-bootstrap if needed
-   - Default admin: `admin@examduty.com` / `admin123`
+   - Default admin: `admin@examduty.com` / `Admin123` (capital A — bcrypt is case-sensitive, so `admin123` gets a 401)
    - Change in `config.js` if different
 
 ## Test Coverage

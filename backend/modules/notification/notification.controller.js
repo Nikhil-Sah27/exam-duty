@@ -37,8 +37,36 @@ const removeAll = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, ...result });
 });
 
+
+// CS-only. Resolves the current filter selection to a recipient list so the
+// compose screen can show "this will reach 42 people" before anything sends.
+const previewBroadcast = catchAsync(async (req, res) => {
+  const data = await notificationService.previewBroadcastRecipients({
+    roles: req.body?.roles || [],
+    departments: req.body?.departments || [],
+  });
+  res.status(200).json({ success: true, data });
+});
+
+const broadcast = catchAsync(async (req, res) => {
+  const data = await notificationService.sendBroadcast(req.body, req.user.id);
+  res.status(200).json({ success: true, data });
+});
+
+
+const updateChannelPreferences = catchAsync(async (req, res) => {
+  const data = await notificationService.updateChannelPreferences(req.user.id, {
+    emailNotifications: req.body?.emailNotifications,
+    whatsappNotifications: req.body?.whatsappNotifications,
+  });
+  res.status(200).json({ success: true, data });
+});
+
 module.exports = {
   getMine,
+  previewBroadcast,
+  broadcast,
+  updateChannelPreferences,
   getUnreadCount,
   markAsRead,
   markAllAsRead,

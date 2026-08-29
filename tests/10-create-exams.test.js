@@ -27,7 +27,15 @@ async function run(token) {
   let deptId = null;
   let semId = null;
   let courseId = null;
+  let planGroupId = null;
   const deptCode = `CIE${Date.now() % 10000}`;
+
+  // The planner refuses dates in the past, so every date is derived from
+  // today rather than hardcoded.
+  const dateIn = (days) =>
+    new Date(Date.now() + days * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split("T")[0];
 
   await test("Setup: create dept + semester + course", async () => {
     const dRes = await api.post("/departments", {
@@ -66,7 +74,7 @@ async function run(token) {
   // --- Calculate Dates ---
   await test("POST /create-exams/cie/calculate-dates - auto calculate", async () => {
     const res = await api.post("/create-exams/cie/calculate-dates", {
-      startDate: "2026-07-01",
+      startDate: dateIn(7),
       departments: [{ courseCount: 5 }],
       shifts: [
         { startTime: "09:00", endTime: "12:00" },
@@ -91,23 +99,30 @@ async function run(token) {
     const res = await api.post("/create-exams/cie/plan", {
       examType: "IA1",
       semester: 3,
-      startDate: "2026-07-15",
-      endDate: "2026-07-16",
+      startDate: dateIn(21),
+      endDate: dateIn(22),
       shifts: [{ startTime: "09:00", endTime: "12:00" }],
       routine: [
         {
-          date: "2026-07-15",
+          date: dateIn(21),
           shiftIndex: 0,
           assignments: { [deptId]: courseId },
         },
       ],
     });
     assertStatus(res, 201);
-    assertExists(res.data.data.examGroup, "examGroup");
+    // The endpoint returns the created exam group itself, plus the
+    // slotKey → scheduleId mapping the planner UI needs to place rooms.
+    planGroupId = res.data.data._id || res.data.data.id;
+    assertExists(planGroupId, "exam group id");
+    assertExists(res.data.data.scheduleMapping, "scheduleMapping");
   });
 
   // --- Cleanup ---
+  // The exam group has to go too — leaving it behind would make the next run
+  // collide with it as a duplicate IA1/Semester 3 over the same dates.
   await test("Cleanup: delete test department", async () => {
+    if (planGroupId) await api.delete(`/exam-groups/${planGroupId}`).catch(() => {});
     if (courseId) await api.delete(`/departments/courses/${courseId}`).catch(() => {});
     if (semId) await api.delete(`/departments/semesters/${semId}`).catch(() => {});
     if (deptId) await api.delete(`/departments/${deptId}`).catch(() => {});

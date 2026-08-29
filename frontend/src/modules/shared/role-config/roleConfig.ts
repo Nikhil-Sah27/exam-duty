@@ -6,7 +6,6 @@ import {
   LayoutDashboard,
   type LucideIcon,
 } from "lucide-react";
-import type { RoomDutyFlags } from "@/modules/shared/exams/types/exam.types";
 
 /**
  * Operational dashboard roles (Invigilator, RS, DCS) share the same page set
@@ -87,7 +86,7 @@ const CONFIGS: Record<OperationalRole, RoleDashboardConfig> = {
   dcs: DCS_CONFIG,
 };
 
-export function getRoleConfig(role: string | undefined): RoleDashboardConfig | null {
+export function getRoleConfig(role: string | null | undefined): RoleDashboardConfig | null {
   if (!role) return null;
   return CONFIGS[role as OperationalRole] || null;
 }

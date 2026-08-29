@@ -9,6 +9,7 @@ import ExamDetails from "@/modules/exams/components/ExamDetails";
 import DutiesPage from "@/modules/duties/components/DutiesPage";
 import UsersPage from "@/modules/users/components/UsersPage";
 import ChangeRequestsPage from "@/modules/change-requests/components/ChangeRequestsPage";
+import SendNotificationPage from "@/modules/notifications/components/SendNotificationPage";
 import DepartmentsPage from "@/modules/departments/components/DepartmentsPage";
 import DepartmentDetailsPage from "@/modules/departments/components/DepartmentDetailsPage";
 import InfrastructurePage from "@/modules/infrastructure/components/InfrastructurePage";
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="/duties" element={<DutiesPage />} />
         <Route path="/users" element={<UsersPage />} />
         <Route path="/requests" element={<ChangeRequestsPage />} />
+        <Route path="/notifications" element={<SendNotificationPage />} />
         <Route path="/manage-duties" element={<ManageDutiesPage />} />
         <Route path="/manage-duties/:id" element={<TeacherDetailsPage />} />
         <Route

@@ -4,7 +4,7 @@
  * Runs all test suites sequentially and prints a final summary.
  *
  * Usage:
- *   node runner.js                          # Run all tests against localhost:5000
+ *   node runner.js                          # Run all tests against localhost:5001
  *   API_URL=https://your-ngrok.app/api node runner.js   # Run against remote
  */
 

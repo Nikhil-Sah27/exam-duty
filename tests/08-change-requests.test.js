@@ -1,5 +1,5 @@
 const {
-  api, setToken, test, skip,
+  api, setToken, login, test, skip,
   assert, assertExists, assertStatus, summary, resetCounters, CONFIG,
 } = require("./helpers");
 
@@ -23,12 +23,23 @@ async function run(token) {
   let teacherBId = null;
   let dutyBId = null;
 
+  // Room labels are namespaced per run so a second run doesn't collide with
+  // the duties this one leaves assigned. The date has to stay in the future —
+  // a change request on a past duty is rejected.
+  const runId = Date.now() % 100000;
+  const dutyDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .split("T")[0];
+  const teacherPassword = "teacher123";
+  const teacherAEmail = `cr_teacherA_${Date.now()}@test.com`;
+  const teacherBEmail = `cr_teacherB_${Date.now()}@test.com`;
+
   // Setup: Create exam, two teachers, and duties
   await test("Setup: create exam + teachers + duties", async () => {
     // Exam
     const examRes = await api.post("/exams", {
       name: "Change Req Test Exam",
-      date: "2026-09-01",
+      date: dutyDate,
       department: "CSE",
       semester: 5,
       type: "internal",
@@ -38,18 +49,20 @@ async function run(token) {
     // Teacher A
     const tARes = await api.post("/users", {
       name: "Teacher A CR",
-      email: `cr_teacherA_${Date.now()}@test.com`,
-      password: "teacher123",
-      role: "invigilator",
+      email: teacherAEmail,
+      password: teacherPassword,
+      phone: "9876543211",
+      designation: "Assistant Professor",
     });
     teacherAId = tARes.data.data._id || tARes.data.data.id;
 
     // Teacher B
     const tBRes = await api.post("/users", {
       name: "Teacher B CR",
-      email: `cr_teacherB_${Date.now()}@test.com`,
-      password: "teacher123",
-      role: "invigilator",
+      email: teacherBEmail,
+      password: teacherPassword,
+      phone: "9876543212",
+      designation: "Assistant Professor",
     });
     teacherBId = tBRes.data.data._id || tBRes.data.data.id;
 
@@ -57,8 +70,9 @@ async function run(token) {
     const dutyRes = await api.post("/duties/admin-assign", {
       exam: examId,
       teacher: teacherAId,
-      room: "CR-101",
-      date: "2026-09-01",
+      role: "invigilator",
+      room: `CR${runId}-101`,
+      date: dutyDate,
       startTime: "09:00",
       endTime: "12:00",
     });
@@ -66,19 +80,25 @@ async function run(token) {
   });
 
   // --- Create Drop Request ---
+  // Only the teacher who owns the duty may raise a request against it — the
+  // admin cannot file one on their behalf. Review actions below are CS-only,
+  // so the admin token is restored afterwards.
   await test("POST /change-requests - create drop request", async () => {
     if (!dutyId) throw new Error("No duty");
-    // Login as the teacher who owns the duty to create request
-    // Actually, the admin can create on behalf in some implementations
-    // Let's try with admin token first
-    const res = await api.post("/change-requests", {
-      duty: dutyId,
-      type: "drop",
-      reason: "Personal emergency - test",
-    });
-    assertStatus(res, 201);
-    requestId = res.data.data._id || res.data.data.id;
-    assertExists(requestId, "request id");
+    const teacherToken = await login(teacherAEmail, teacherPassword, "invigilator");
+    setToken(teacherToken);
+    try {
+      const res = await api.post("/change-requests", {
+        duty: dutyId,
+        type: "drop",
+        reason: "Personal emergency - test",
+      });
+      assertStatus(res, 201);
+      requestId = res.data.data._id || res.data.data.id;
+      assertExists(requestId, "request id");
+    } finally {
+      setToken(token);
+    }
   });
 
   // --- List All Requests ---
@@ -119,19 +139,26 @@ async function run(token) {
     const dutyRes = await api.post("/duties/admin-assign", {
       exam: examId,
       teacher: teacherBId,
-      room: "CR-201",
-      date: "2026-09-01",
+      role: "invigilator",
+      room: `CR${runId}-201`,
+      date: dutyDate,
       startTime: "14:00",
       endTime: "17:00",
     });
     dutyBId = dutyRes.data.data._id || dutyRes.data.data.id;
 
-    const reqRes = await api.post("/change-requests", {
-      duty: dutyBId,
-      type: "drop",
-      reason: "Schedule conflict - test",
-    });
-    approveRequestId = reqRes.data.data._id || reqRes.data.data.id;
+    const teacherToken = await login(teacherBEmail, teacherPassword, "invigilator");
+    setToken(teacherToken);
+    try {
+      const reqRes = await api.post("/change-requests", {
+        duty: dutyBId,
+        type: "drop",
+        reason: "Schedule conflict - test",
+      });
+      approveRequestId = reqRes.data.data._id || reqRes.data.data.id;
+    } finally {
+      setToken(token);
+    }
   });
 
   await test("PATCH /change-requests/:id/approve - approve request", async () => {

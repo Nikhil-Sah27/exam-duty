@@ -26,35 +26,49 @@ async function run() {
 
   // --- Register ---
   const testEmail = `testuser_${Date.now()}@test.com`;
+  let registered = false;
 
   await test("POST /auth/register - register new user", async () => {
     const res = await api.post("/auth/register", {
       name: "Test User",
       email: testEmail,
       password: "test123456",
-      role: "invigilator",
+      phone: "9876543210",
+      // Roles are derived from designation; only "Other" lets the caller pick.
+      designation: "Other",
+      roles: ["invigilator"],
     });
     assertStatus(res, 201);
     assertExists(res.data.data.token, "token");
     assertExists(res.data.data.user, "user");
     assertEqual(res.data.data.user.email, testEmail, "email");
+    registered = true;
   });
 
   await test("POST /auth/register - duplicate email should fail", async () => {
+    // Without a real first registration this case proves nothing, so make the
+    // dependency an assertion rather than letting it silently pass on a 4xx.
+    assert(registered, "the preceding register must have succeeded");
+    let res = null;
     try {
-      await api.post("/auth/register", {
+      res = await api.post("/auth/register", {
         name: "Duplicate",
         email: testEmail,
         password: "test123456",
-        role: "invigilator",
+        phone: "9876543210",
+        designation: "Other",
+        roles: ["invigilator"],
       });
-      throw new Error("Should have thrown 409");
     } catch (err) {
+      assertExists(err.response, "error response");
+      assertStatus(err.response, 409);
       assert(
-        err.response && (err.response.status === 409 || err.response.status === 400),
-        `Expected 409/400, got ${err.response?.status}`
+        /already registered/i.test(err.response.data.message),
+        `Expected duplicate-email message, got "${err.response.data.message}"`
       );
+      return;
     }
+    throw new Error(`Duplicate email was accepted with status ${res.status}`);
   });
 
   await test("POST /auth/register - missing fields should fail", async () => {

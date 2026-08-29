@@ -21,6 +21,22 @@ function clearToken() {
   delete api.defaults.headers.common["Authorization"];
 }
 
+// Log in and return a token that protected routes accept.
+// A single-role user gets a usable token straight from /auth/login; a
+// multi-role user only gets a tempToken and has to pick an active role first.
+async function login(email, password, preferredRole) {
+  const res = await api.post("/auth/login", { email, password });
+  const { token, tempToken } = res.data.data;
+  if (token) return token;
+
+  const selected = await api.post(
+    "/auth/select-role",
+    { role: preferredRole },
+    { headers: { Authorization: `Bearer ${tempToken}` } }
+  );
+  return selected.data.data.token;
+}
+
 async function test(name, fn) {
   try {
     await fn();
@@ -88,6 +104,7 @@ module.exports = {
   api,
   setToken,
   clearToken,
+  login,
   test,
   skip,
   assert,

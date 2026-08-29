@@ -1,5 +1,5 @@
 const {
-  api, setToken, test, skip,
+  api, setToken, login, test, skip,
   assert, assertExists, assertStatus, summary, resetCounters, CONFIG,
 } = require("./helpers");
 
@@ -21,10 +21,17 @@ async function run(token) {
   let teacherId = null;
   let dutyId = null;
 
+  // Room labels are namespaced per run: a room's role slot stays occupied
+  // once claimed, so reusing fixed labels would make a second run conflict.
+  const runId = Date.now() % 100000;
+  const examDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .split("T")[0];
+
   await test("Setup: create exam for duty tests", async () => {
     const res = await api.post("/exams", {
       name: "Duty Test Exam",
-      date: "2026-08-01",
+      date: examDate,
       department: "CSE",
       semester: 4,
       type: "internal",
@@ -34,12 +41,15 @@ async function run(token) {
 
   // Create a teacher user
   const teacherEmail = `duty_teacher_${Date.now()}@test.com`;
+  const teacherPassword = "teacher123";
   await test("Setup: create teacher user", async () => {
     const res = await api.post("/users", {
       name: "Duty Test Teacher",
       email: teacherEmail,
-      password: "teacher123",
-      role: "invigilator",
+      password: teacherPassword,
+      phone: "9876543210",
+      // Assistant Professor resolves to roles [rs, invigilator].
+      designation: "Assistant Professor",
     });
     teacherId = res.data.data._id || res.data.data.id;
   });
@@ -50,8 +60,11 @@ async function run(token) {
     const res = await api.post("/duties/admin-assign", {
       exam: examId,
       teacher: teacherId,
-      room: "101",
-      date: "2026-08-01",
+      // The teacher holds two duty-eligible roles, so the slot is ambiguous
+      // unless the assignment names it.
+      role: "invigilator",
+      room: `DT${runId}-101`,
+      date: examDate,
       startTime: "09:00",
       endTime: "12:00",
     });
@@ -62,32 +75,50 @@ async function run(token) {
 
   await test("POST /duties/admin-assign - duplicate should fail (conflict)", async () => {
     if (!examId || !teacherId) throw new Error("Missing data");
+    let res = null;
     try {
-      await api.post("/duties/admin-assign", {
+      res = await api.post("/duties/admin-assign", {
         exam: examId,
         teacher: teacherId,
-        room: "102",
-        date: "2026-08-01",
+        role: "invigilator",
+        room: `DT${runId}-102`,
+        date: examDate,
         startTime: "09:00",
         endTime: "12:00",
       });
-      throw new Error("Should fail - teacher conflict");
     } catch (err) {
-      assert(err.response && err.response.status >= 400, "Should return 4xx");
+      // A bare `>= 400` would also pass on 401/404/500, none of which is the
+      // conflict being tested — pin it to the teacher-conflict 409.
+      assertExists(err.response, "error response");
+      assertStatus(err.response, 409);
+      assert(
+        /already has duty/i.test(err.response.data.message),
+        `Expected a teacher-conflict message, got "${err.response.data.message}"`
+      );
+      return;
     }
+    throw new Error(`Conflicting duty was accepted with status ${res.status}`);
   });
 
   // --- Self Assign ---
+  // CS holds no duty slot by design, so the admin token can't self-assign.
+  // The claim runs as the invigilator created above and hands the token back.
   await test("POST /duties/self-assign - self assign duty", async () => {
     if (!examId) throw new Error("No exam");
-    const res = await api.post("/duties/self-assign", {
-      exam: examId,
-      room: "201",
-      date: "2026-08-01",
-      startTime: "14:00",
-      endTime: "17:00",
-    });
-    assertStatus(res, 201);
+    const teacherToken = await login(teacherEmail, teacherPassword, "invigilator");
+    setToken(teacherToken);
+    try {
+      const res = await api.post("/duties/self-assign", {
+        exam: examId,
+        room: `DT${runId}-201`,
+        date: examDate,
+        startTime: "14:00",
+        endTime: "17:00",
+      });
+      assertStatus(res, 201);
+    } finally {
+      setToken(token);
+    }
   });
 
   // --- List Duties ---

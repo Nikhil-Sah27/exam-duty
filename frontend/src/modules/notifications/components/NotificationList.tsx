@@ -1,6 +1,7 @@
 import { useNotifications, useMarkAllAsRead } from "../hooks";
 import NotificationItem from "./NotificationItem";
 import ClearAllNotificationsButton from "./ClearAllNotificationsButton";
+import EmailPreferenceToggle from "./EmailPreferenceToggle";
 import { Button } from "@/shared/components";
 
 export default function NotificationList() {
@@ -45,6 +46,8 @@ export default function NotificationList() {
           </div>
         )}
       </div>
+
+      <EmailPreferenceToggle />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 const Notification = require("./notification.model");
+const User = require("../auth/auth.model");
 
 const create = (data, session) => {
   if (session) return Notification.create([data], { session }).then((d) => d[0]);
@@ -7,6 +8,20 @@ const create = (data, session) => {
 
 const createMany = (docs, session) => {
   return Notification.insertMany(docs, session ? { session } : {});
+};
+
+/**
+ * Create a notification that must exist at most once, identified by its
+ * `dedupeKey`. Returns null when the key is already taken (E11000) — meaning
+ * another run already produced this notification and the caller should skip.
+ */
+const claim = async (data) => {
+  try {
+    return await Notification.create(data);
+  } catch (err) {
+    if (err?.code === 11000) return null;
+    throw err;
+  }
 };
 
 const findByRecipient = (recipientId, filter = {}) => {
@@ -48,9 +63,30 @@ const deleteAllByRecipient = (recipientId) => {
   return Notification.deleteMany({ recipient: recipientId });
 };
 
+/**
+ * Recipients for an admin broadcast.
+ *
+ * `roles` and `departments` intersect when both are given — "all RS in CSE"
+ * is the common ask, not "everyone who is an RS plus everyone in CSE". Each
+ * filter is skipped when its list is empty, and the soft-delete pre-hook on
+ * User keeps deactivated accounts out without an explicit isActive clause.
+ */
+const findBroadcastRecipients = ({ roles = [], departments = [] } = {}) => {
+  const filter = {};
+  if (roles.length) filter.roles = { $in: roles };
+  if (departments.length) filter.department = { $in: departments };
+
+  return User.find(filter)
+    .select("name email phone department roles emailNotifications whatsappNotifications")
+    .sort({ name: 1 })
+    .lean();
+};
+
 module.exports = {
   create,
   createMany,
+  claim,
+  findBroadcastRecipients,
   findByRecipient,
   countUnread,
   findById,

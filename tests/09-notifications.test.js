@@ -1,5 +1,5 @@
 const {
-  api, setToken, test,
+  api, setToken, test, skip,
   assert, assertExists, assertStatus, summary, resetCounters, CONFIG,
 } = require("./helpers");
 
