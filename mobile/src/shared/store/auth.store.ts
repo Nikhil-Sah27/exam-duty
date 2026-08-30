@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import * as SecureStore from "expo-secure-store";
+
+import { queryClient } from "../query-client";
 import type { User, UserRole } from "@/shared/types";
 
 /**
@@ -84,6 +86,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     forget(TOKEN_KEY);
     forget(TEMP_TOKEN_KEY);
     set({ user: null, token: null, tempToken: null });
+    // Cached queries outlive the session otherwise. Notifications, my change
+    // requests and my DCS groups are all user-scoped but keyed without a user
+    // id, so on a shared handset the next person to sign in would be served
+    // the previous user's data until each key went stale.
+    queryClient.clear();
   },
 
   hydrate: async () => {

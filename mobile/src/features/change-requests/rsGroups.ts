@@ -135,12 +135,26 @@ export interface RsOwnedGroup {
   rangeLabel: string;
 }
 
-/** Active duties from today onwards — a past group cannot be swapped. */
-export function filterUpcomingRsDuties(duties: readonly Duty[]): Duty[] {
+/**
+ * Active RS duties from today onwards — a past group cannot be swapped.
+ *
+ * `GET /duties?teacher=` returns every duty the teacher holds, in every role,
+ * and a teacher can hold more than one (Associate Professor = rs +
+ * invigilator). Duties stamped with another role are dropped: chunking an
+ * invigilator's single-room duty into an "RS group" would submit a swap the
+ * backend would then approve against the wrong role slot. The web groups
+ * without this check; here it matters because the swap payload is built from
+ * whatever ends up in the group. Duties predating the `role` field are kept —
+ * they have no examSchedule either, so they surface as unswappable orphans.
+ */
+export function filterUpcomingRsDuties(
+  duties: readonly (Duty & { role?: string })[]
+): Duty[] {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return duties.filter((d) => {
     if (d.status !== "assigned") return false;
+    if (d.role && d.role !== "rs") return false;
     const day = new Date(d.date);
     day.setHours(0, 0, 0, 0);
     return day >= today;

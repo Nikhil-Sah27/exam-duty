@@ -76,15 +76,33 @@ export default function InvigilatorRequests() {
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const allDuties = useMemo(() => dutiesQuery.data ?? [], [dutiesQuery.data]);
+  // `role` is on every duty the backend writes today but absent on legacy rows,
+  // and the shared Duty type does not carry it — widen here rather than edit a
+  // type the other screens share.
+  const allDuties: (Duty & { role?: string })[] = useMemo(
+    () => dutiesQuery.data ?? [],
+    [dutiesQuery.data]
+  );
   const requests = useMemo(() => requestsQuery.data ?? [], [requestsQuery.data]);
+  // A teacher who is also RS or DCS files group swaps too; those belong on the
+  // panel that can act on them, not here. Scope is absent on the oldest rows,
+  // which were all duty-scoped.
+  const dutyRequests = useMemo(
+    () => requests.filter((r) => (r.scope ?? "duty") === "duty"),
+    [requests]
+  );
 
+  // `GET /duties?teacher=` returns every role's duties, and a teacher can hold
+  // more than one role. Only the invigilator ones belong on this panel — the
+  // group roles change whole groups, from their own panels. Duties predating
+  // the `role` field are kept so nothing legacy disappears.
   const upcoming = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     return allDuties
       .filter((d) => {
         if (d.status !== "assigned") return false;
+        if (d.role && d.role !== "invigilator") return false;
         const day = new Date(d.date);
         day.setHours(0, 0, 0, 0);
         return day >= today;
@@ -200,7 +218,7 @@ export default function InvigilatorRequests() {
             hint="Once a duty is assigned you can request changes here."
           />
         }
-        requests={requests}
+        requests={dutyRequests}
         requestsLoading={requestsQuery.isLoading}
         error={
           dutiesQuery.error?.message ?? requestsQuery.error?.message ?? null
