@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import * as Notifications from "expo-notifications";
+import { notifications } from "./notifications-module";
+
+/**
+ * `useLastNotificationResponse`, or a no-op returning null where the module
+ * could not load. Bound at module scope rather than chosen per render: the
+ * rules of hooks care that the same hook is called in the same order every
+ * render, not that it came from a particular package.
+ */
+const useLastNotificationResponse =
+  notifications?.useLastNotificationResponse ?? (() => null);
 import { useAuthStore } from "@/shared/store/auth.store";
 import { isOperationalRole } from "@/shared/role-config";
 import { NOTIFICATIONS_KEY } from "@/features/notifications/hooks";
@@ -70,7 +79,8 @@ export function usePushRuntime(): void {
    * collection.
    */
   useEffect(() => {
-    const subscription = Notifications.addNotificationReceivedListener(() => {
+    if (!notifications) return;
+    const subscription = notifications.addNotificationReceivedListener(() => {
       void queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_KEY });
     });
     return () => subscription.remove();
@@ -81,7 +91,7 @@ export function usePushRuntime(): void {
    * runs, and the tap that cold-started it. The response is cleared after
    * routing so a later remount does not send the user back there.
    */
-  const lastResponse = Notifications.useLastNotificationResponse();
+  const lastResponse = useLastNotificationResponse();
   useEffect(() => {
     if (!lastResponse) return;
     // Deep links are only meaningful once the tabs exist.
@@ -90,7 +100,7 @@ export function usePushRuntime(): void {
     const route = resolveNotificationRoute(
       lastResponse.notification.request.content.data
     );
-    Notifications.clearLastNotificationResponse();
+    notifications?.clearLastNotificationResponse();
     if (route) router.push(route);
   }, [lastResponse, token, activeRole, router]);
 }

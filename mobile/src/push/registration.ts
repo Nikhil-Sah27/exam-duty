@@ -1,7 +1,7 @@
 import { Platform } from "react-native";
 import Constants, { AppOwnership } from "expo-constants";
 import * as Device from "expo-device";
-import * as Notifications from "expo-notifications";
+import { notifications } from "./notifications-module";
 import * as SecureStore from "expo-secure-store";
 import { deregisterPushToken, registerPushToken, type PushPlatform } from "./api";
 
@@ -41,7 +41,7 @@ import { deregisterPushToken, registerPushToken, type PushPlatform } from "./api
  * two hours" case — so it banners even with the app open. `shouldShowAlert` is
  * deprecated in SDK 57 in favour of the banner/list pair.
  */
-Notifications.setNotificationHandler({
+notifications?.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
     shouldShowList: true,
@@ -138,11 +138,11 @@ const forgetToken = () => {
 };
 
 async function ensureAndroidChannel(): Promise<void> {
-  if (Platform.OS !== "android") return;
+  if (Platform.OS !== "android" || !notifications) return;
   try {
-    await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
+    await notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
       name: "Duty alerts",
-      importance: Notifications.AndroidImportance.HIGH,
+      importance: notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: "#4F46E5",
     });
@@ -157,11 +157,12 @@ async function ensureAndroidChannel(): Promise<void> {
  * quietly to the notification centre without ever prompting, and counts.
  */
 export async function hasNotificationPermission(): Promise<boolean> {
+  if (!notifications) return false;
   try {
-    const settings = await Notifications.getPermissionsAsync();
+    const settings = await notifications.getPermissionsAsync();
     return (
       settings.granted ||
-      settings.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
+      settings.ios?.status === notifications.IosAuthorizationStatus.PROVISIONAL
     );
   } catch {
     return false;
@@ -187,6 +188,9 @@ export async function registerDevice({
 }): Promise<PushOutcome> {
   if (!Device.isDevice) return blocked("simulator");
   if (isExpoGo()) return blocked("expo-go");
+  // A development build whose native module has not been rebuilt reaches here
+  // with the JS module absent; treat it the same as running under Expo Go.
+  if (!notifications) return blocked("expo-go");
 
   const projectId = resolveProjectId();
   if (!projectId) return blocked("no-project-id");
@@ -197,10 +201,10 @@ export async function registerDevice({
   if (!granted) {
     if (!prompt) return blocked("permission-denied");
     try {
-      const asked = await Notifications.requestPermissionsAsync();
+      const asked = await notifications.requestPermissionsAsync();
       granted =
         asked.granted ||
-        asked.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
+        asked.ios?.status === notifications.IosAuthorizationStatus.PROVISIONAL;
     } catch {
       granted = false;
     }
@@ -211,7 +215,7 @@ export async function registerDevice({
   try {
     // Documented as a network call to Expo's servers, so it can fail on a
     // flaky connection with nothing wrong at either end.
-    const result = await Notifications.getExpoPushTokenAsync({ projectId });
+    const result = await notifications.getExpoPushTokenAsync({ projectId });
     token = result.data;
   } catch {
     return blocked("token-unavailable");
