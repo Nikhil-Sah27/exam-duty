@@ -27,7 +27,14 @@
       "expo-router",
       "expo-status-bar",
       "expo-secure-store",
-      "expo-notifications"
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#4F46E5",
+          "defaultChannel": "default"
+        }
+      ]
     ],
     "scheme": "examduty",
     "extra": {
