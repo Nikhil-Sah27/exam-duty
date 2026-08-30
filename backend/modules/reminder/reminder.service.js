@@ -16,23 +16,26 @@ const emailService = require("../email/email.service");
 const whatsappRepository = require("../whatsapp/whatsapp.repository");
 const whatsappService = require("../whatsapp/whatsapp.service");
 const phone = require("../whatsapp/phone.utils");
+const pushService = require("../push/push.service");
 const windows = require("./reminder.windows");
 
 /**
- * Duty reminders — "your duty is coming up", by in-app notification and email.
+ * Duty reminders — "your duty is coming up", in-app and by email, WhatsApp
+ * and push.
  *
  * Shape of a run, per lead window (7d / 1d / 2h):
  *   1. Pull `assigned` duties whose calendar date could fall in the window.
  *   2. Keep the ones whose real start instant lands inside it.
  *   3. Group them into (teacher, bucket) digests — see reminder.windows.
- *   4. Claim each digest's dedupe key. A duplicate means an earlier tick
- *      already sent it, so skip.
- *   5. On a fresh claim, write the in-app notification and send the email.
+ *   4. Claim the digest's dedupe key on each channel separately. A duplicate
+ *      means an earlier tick already sent that channel's copy, so skip it.
+ *   5. On a fresh claim, deliver that channel: the in-app notification, the
+ *      email, the WhatsApp message, the push to every registered device.
  *
- * The claim in step 4 gates both channels, so re-running this job — every
- * 15 minutes by cron, or by hand from the admin endpoint — never produces a
- * second copy of anything. That makes the whole job safe to retry, which is
- * what lets the cron tick often enough to hit the 2h window accurately.
+ * Every channel is claimed before it is delivered, so re-running this job —
+ * every 15 minutes by cron, or by hand from the admin endpoint — never
+ * produces a second copy of anything. That makes the whole job safe to retry,
+ * which is what lets the cron tick often enough to hit the 2h window accurately.
  *
  * Cancelled duties are excluded by the `status: "assigned"` filter, so a duty
  * dropped after a 7d reminder simply stops appearing in later windows.
@@ -41,7 +44,7 @@ const windows = require("./reminder.windows");
 const POPULATE = [
   {
     path: "teacher",
-    select: "name email phone emailNotifications whatsappNotifications",
+    select: "name email phone emailNotifications whatsappNotifications pushNotifications",
   },
   {
     path: "examSchedule",
@@ -143,7 +146,7 @@ const collectDigests = async (window, now, tickMs) => {
  * earlier version had the email log's claim gate all of them, which coupled
  * things that fail separately: a teacher with no email address would have
  * consumed the shared claim and silently lost the in-app notification too.
- * Three claims, three outcomes, one shared key suffix.
+ * Four claims, four outcomes, one shared key suffix.
  *
  * The per-channel statuses are folded into one summary object so the caller
  * can report the run without knowing how many channels exist.
@@ -223,6 +226,30 @@ const deliverDigest = async (digest) => {
     outcome.whatsapp = sent.status;
   }
 
+  // --- push ---------------------------------------------------------------
+  // The claim is per *device*: `sendToUser` suffixes `push:<key>` with each
+  // token before claiming it. Push is the only channel that fans out — a
+  // teacher with a phone and a tablet is two sends with two outcomes — and a
+  // single user-level claim would let whichever device went first silently
+  // gate the others.
+  //
+  // Wrapped like the in-app claim rather than left bare like email/WhatsApp:
+  // this is the last channel, so an escaping error would abandon every later
+  // digest in the window after three channels had already gone out.
+  try {
+    const sent = await pushService.sendToUser({
+      userId: digest.teacher._id,
+      type: "duty_reminder",
+      data,
+      dedupeKey: `push:${key}`,
+      optedOut: digest.teacher.pushNotifications === false,
+    });
+    outcome.push = sent.status;
+  } catch (err) {
+    console.error("[reminder] push failed:", err?.message || err);
+    outcome.push = "failed";
+  }
+
   return outcome;
 };
 
@@ -237,12 +264,13 @@ const runWindow = async (window, now, tickMs) => {
     inApp: {},
     email: {},
     whatsapp: {},
+    push: {},
   };
   for (const digest of digests) summary.duties += digest.duties.length;
 
   for (const digest of digests) {
     const outcome = await deliverDigest(digest);
-    for (const channel of ["inApp", "email", "whatsapp"]) {
+    for (const channel of ["inApp", "email", "whatsapp", "push"]) {
       const status = outcome[channel];
       if (status) summary[channel][status] = (summary[channel][status] || 0) + 1;
     }
@@ -290,8 +318,13 @@ const runReminders = async ({ now = new Date(), tickMs, leads } = {}) => {
             (counts.skipped_not_configured || 0) +
             (counts.skipped_opted_out || 0) +
             (counts.skipped_invalid_number || 0) +
+            (counts.skipped_invalid_token || 0) +
             (counts.no_address || 0) +
-            (counts.no_number || 0),
+            (counts.no_number || 0) +
+            (counts.no_device || 0) +
+            // Expo said the app is gone and the token has been deleted. Not a
+            // transport failure to retry — there is no longer a device to reach.
+            (counts.unregistered || 0),
         };
       },
       { sent: 0, duplicate: 0, failed: 0, skipped: 0 },
@@ -301,14 +334,16 @@ const runReminders = async ({ now = new Date(), tickMs, leads } = {}) => {
     inApp: channelTotals("inApp"),
     email: channelTotals("email"),
     whatsapp: channelTotals("whatsapp"),
+    push: channelTotals("push"),
   };
 
   const totals = {
     digests: results.reduce((n, r) => n + (r.digests || 0), 0),
-    sent: byChannel.email.sent + byChannel.whatsapp.sent,
-    duplicate: byChannel.email.duplicate + byChannel.whatsapp.duplicate,
-    failed: byChannel.email.failed + byChannel.whatsapp.failed,
-    skipped: byChannel.email.skipped + byChannel.whatsapp.skipped,
+    sent: byChannel.email.sent + byChannel.whatsapp.sent + byChannel.push.sent,
+    duplicate:
+      byChannel.email.duplicate + byChannel.whatsapp.duplicate + byChannel.push.duplicate,
+    failed: byChannel.email.failed + byChannel.whatsapp.failed + byChannel.push.failed,
+    skipped: byChannel.email.skipped + byChannel.whatsapp.skipped + byChannel.push.skipped,
   };
 
   return { ranAt: now, tickMs: width, windows: results, totals, byChannel };

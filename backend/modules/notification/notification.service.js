@@ -3,6 +3,7 @@ const notificationRepository = require("./notification.repository");
 const notificationTemplates = require("./notification.templates");
 const emailService = require("../email/email.service");
 const whatsappService = require("../whatsapp/whatsapp.service");
+const pushService = require("../push/push.service");
 const phone = require("../whatsapp/phone.utils");
 const User = require("../auth/auth.model");
 
@@ -107,7 +108,25 @@ const parseBroadcast = (body = {}) => {
     // Opt-in rather than opt-out: WhatsApp is the most intrusive channel, and
     // on the Cloud API each send costs money, so it should be a deliberate tick.
     sendWhatsApp: body.sendWhatsApp === true,
+    // Opt-in for the same reason: a push wakes a locked phone.
+    sendPush: body.sendPush === true,
   };
+};
+
+/**
+ * How many devices each of these users has registered, as a Map keyed by user
+ * id. One query for the whole list — push reachability is a device question,
+ * and asking it per recipient would be a query per person on every keystroke
+ * in the compose form.
+ */
+const countDevicesByUser = async (recipients) => {
+  const devices = await pushService.devicesForUsers(recipients.map((r) => String(r._id)));
+  const counts = new Map();
+  for (const device of devices) {
+    const key = String(device.user);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return counts;
 };
 
 /** Who a given set of filters resolves to. Read-only; drives the live count. */
@@ -120,6 +139,9 @@ const previewBroadcastRecipients = async ({ roles = [], departments = [] } = {})
   const reachableOnWhatsApp = (r) =>
     phone.normalize(r.phone).ok && r.whatsappNotifications !== false;
 
+  const devicesOf = await countDevicesByUser(recipients);
+  const deviceCount = (r) => devicesOf.get(String(r._id)) || 0;
+
   return {
     total: recipients.length,
     withEmail: recipients.filter((r) => r.email && r.emailNotifications !== false).length,
@@ -130,6 +152,18 @@ const previewBroadcastRecipients = async ({ roles = [], departments = [] } = {})
     whatsappOptedOut: recipients.filter(
       (r) => phone.normalize(r.phone).ok && r.whatsappNotifications === false,
     ).length,
+    withPush: recipients.filter((r) => deviceCount(r) > 0 && r.pushNotifications !== false)
+      .length,
+    withoutPush: recipients.filter((r) => deviceCount(r) === 0).length,
+    pushOptedOut: recipients.filter(
+      (r) => deviceCount(r) > 0 && r.pushNotifications === false,
+    ).length,
+    // People, not devices — the counts above answer "how many will hear about
+    // this?", while `devices` answers "how many sends is that?".
+    pushDevices: recipients.reduce(
+      (n, r) => n + (r.pushNotifications === false ? 0 : deviceCount(r)),
+      0,
+    ),
     recipients: recipients.map((r) => ({
       id: String(r._id),
       name: r.name,
@@ -140,6 +174,8 @@ const previewBroadcastRecipients = async ({ roles = [], departments = [] } = {})
       // Masked — the screen needs to know a number is usable, not what it is.
       phone: phone.normalize(r.phone).ok ? phone.mask(phone.normalize(r.phone).e164) : null,
       whatsappNotifications: r.whatsappNotifications !== false,
+      pushDevices: deviceCount(r),
+      pushNotifications: r.pushNotifications !== false,
     })),
   };
 };

@@ -2,25 +2,32 @@
 // Other modules import ONLY from this file — never from service or repository.
 //
 // Every emit writes the in-app notification and then fans out to the other
-// channels: email for the types in email.dispatcher's EMAILABLE_TYPES, and
-// WhatsApp for those in whatsapp.dispatcher's WHATSAPPABLE_TYPES. Both are
-// registered through `postCommit`, so when the caller passes a transaction
-// session they go out only after that transaction commits — a duty assignment
-// that rolls back never reaches anyone's inbox or phone. Without a session
-// they dispatch immediately, detached, so the request isn't held up by SMTP
-// or by WhatsApp.
+// channels: email for the types in email.dispatcher's EMAILABLE_TYPES,
+// WhatsApp for those in whatsapp.dispatcher's WHATSAPPABLE_TYPES, and push
+// for those in push.dispatcher's PUSHABLE_TYPES. All three are registered
+// through `postCommit`, so when the caller passes a transaction session they
+// go out only after that transaction commits — a duty assignment that rolls
+// back never reaches anyone's inbox, phone or lock screen. Without a session
+// they dispatch immediately, detached, so the request isn't held up by SMTP,
+// by WhatsApp or by the Expo push API.
 //
-// The two channels are dispatched independently: a dead SMTP host must not
-// stop the WhatsApp message, and a dropped WhatsApp session must not stop
-// the email.
+// The three channels are dispatched independently: a dead SMTP host must not
+// stop the WhatsApp message, a dropped WhatsApp session must not stop the
+// email, and a push failure must stop neither.
 
 const notificationRepository = require("./notification.repository");
 const templates = require("./notification.templates");
 const emailDispatcher = require("../email/email.dispatcher");
 const whatsappDispatcher = require("../whatsapp/whatsapp.dispatcher");
+const pushDispatcher = require("../push/push.dispatcher");
 const postCommit = require("../../shared/utils/postCommit");
 
-/** Queue the email and WhatsApp copies for notifications that warrant them. */
+/**
+ * Queue the email, WhatsApp and push copies for notifications that warrant
+ * them. One `onCommit` registration per channel, never one shared callback:
+ * a registration that threw would take the channels queued behind it down
+ * with it.
+ */
 const queueChannels = (session, notifications) => {
   const emailable = notifications.filter((n) => emailDispatcher.isEmailable(n.type));
   if (emailable.length) {
@@ -30,6 +37,11 @@ const queueChannels = (session, notifications) => {
   const whatsappable = notifications.filter((n) => whatsappDispatcher.isWhatsAppable(n.type));
   if (whatsappable.length) {
     postCommit.onCommit(session, () => whatsappDispatcher.dispatch(whatsappable));
+  }
+
+  const pushable = notifications.filter((n) => pushDispatcher.isPushable(n.type));
+  if (pushable.length) {
+    postCommit.onCommit(session, () => pushDispatcher.dispatch(pushable));
   }
 };
 

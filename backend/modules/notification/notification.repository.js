@@ -77,7 +77,9 @@ const findBroadcastRecipients = ({ roles = [], departments = [] } = {}) => {
   if (departments.length) filter.department = { $in: departments };
 
   return User.find(filter)
-    .select("name email phone department roles emailNotifications whatsappNotifications")
+    .select(
+      "name email phone department roles emailNotifications whatsappNotifications pushNotifications"
+    )
     .sort({ name: 1 })
     .lean();
 };
