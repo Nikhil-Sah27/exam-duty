@@ -4,17 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Read First
 
-`README.md` is long and current for domain concepts (roles, DCS group sizing formula, seat sharing, full API reference, model list). `APP_FLOW.md` walks the same ground per-role, screen by screen. Do not duplicate those here — this file covers commands, invariants, and the places where the code has drifted from the docs.
+`README.md` is long and current for domain concepts (roles, DCS group sizing formula, seat sharing, full API reference, model list). `APP_FLOW.md` walks the same ground per-role, screen by screen — web only. `mobile/README.md` is the equivalent for the Expo app: route table, source map, backend-from-a-phone setup. Do not duplicate those here — this file covers commands, invariants, and the places where the code has drifted from the docs.
 
 ## Commands
 
 ```bash
-npm run install:all                # install backend + frontend deps (tests/ installs separately)
-npm run dev                        # both servers via concurrently (backend :5001, frontend :5173)
+npm run install:all                # backend + frontend + mobile deps (tests/ installs separately)
+npm run dev                        # backend + frontend via concurrently (backend :5001, frontend :5173)
 npm run dev:backend                # nodemon backend only
 npm run dev:frontend               # vite frontend only
+npm run dev:mobile                 # expo start — run in its OWN terminal, not under concurrently
 npm run build                      # frontend: tsc -b && vite build
 ```
+
+`dev` and `start` cover backend + frontend only. `expo start` is interactive — it draws a
+QR code and reads single keypresses from raw stdin — so it does not survive `concurrently`'s
+line-prefixed multiplexing and is kept out of both blocks on purpose.
 
 Backend needs `backend/.env` (`PORT`, `MONGO_URI`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `NODE_ENV`) and a running MongoDB; `backend/.env.example` lists every var, including the optional email / reminder / WhatsApp blocks. The backend defaults to port **5001** — `:5000` is held by ControlCenter (AirPlay Receiver) on macOS.
 
@@ -47,6 +52,43 @@ The runner threads the token from the Auth suite into later suites, so a single 
 - `backfill-duty-room-ref.js` — populate `Duty.roomRef` on legacy duties created before building-aware conflicts.
 - `migrate-roles.js` — migrate users from the old single `role` field to the `roles[]` array.
 - `release-all-duties.js` / `release-all-dcs.js` — reset duty state during manual testing.
+
+## Mobile app (`mobile/`)
+
+An Expo **SDK 57** app for the three operational roles only — Invigilator, RS, DCS. CS has no mobile surface: a CS-only account is refused at login (`mobile/src/shared/hooks/useAuth.ts`), and approve/reject are `requireRole("cs")` routes with no client here. `mobile/README.md` has the route table, the source map, and how to reach a backend from a physical phone; `mobile/AGENTS.md` (imported by `mobile/CLAUDE.md`) is the in-directory agent brief.
+
+```bash
+cd mobile
+npm install --legacy-peer-deps     # required, see below
+npx expo start                     # Expo Go QR, or i / a for a simulator
+npx tsc --noEmit                   # THE GATE — must exit 0 before anything lands
+npx expo-doctor                    # run after touching app.json or package.json
+```
+
+- **`--legacy-peer-deps` is mandatory.** Two `react-native-worklets` versions inside Expo's own dependency tree fail npm's strict resolver. `expo-doctor` passes regardless — this is Expo's tree, not a broken lockfile.
+- **`npx tsc --noEmit` is the only gate**, and it is currently clean. There is no ESLint config in `mobile/`. `expo/tsconfig.base` sets `noEmit`, so any `.js` sitting next to a `.tsx` under `src/` is a stray build artifact, never source — do not commit one.
+- **Read the versioned docs**, https://docs.expo.dev/versions/v57.0.0/, before writing Expo code. SDK 57 broke enough priors that writing from memory reliably produces wrong code: tabs come from `expo-router/js-tabs`, and `setNotificationHandler` wants `shouldShowBanner`/`shouldShowList` rather than the deprecated `shouldShowAlert`.
+- **API base URL is required configuration.** A phone cannot reach the dev machine's `localhost`, so `mobile/src/api/client.ts` resolves `EXPO_PUBLIC_API_URL` (from `mobile/.env`, inlined at bundle time — restart the bundler after editing) then `expo.extra.apiUrl` from `app.json`, and throws a named error if neither is set. The value must include the `/api` prefix. Use the LAN IP or an ngrok URL; the backend's CORS allowlist already accepts `*.ngrok-free.app`, and CORS does not constrain the native app at all (React Native sends no `Origin`).
+- **Remote push does not work in Expo Go** (removed on Android in SDK 53, and this app declines it on both platforms since `app.json` carries no `extra.eas.projectId`). Registration fails soft with a typed reason and blocks no screen; the in-app inbox works everywhere. Testing real push means `eas init` plus a development build.
+
+**Structure.** `app/` holds expo-router file routes: `(auth)/` (login, select-role) and `(app)/`, a six-tab bar — dashboard, exams, select-duty, upcoming-duties, change-requests, notifications. All are implemented. `src/` holds `api/`, `features/{dashboard,exams,duties,change-requests,notifications}/`, `push/` and `shared/`. Path alias `@/` → `mobile/src/`.
+
+Unlike the web, the three roles share **one** tab set — there is no `/invigilator`, `/rs`, `/dcs` prefix. The three role-varying routes each dispatch on `getRoleConfig(activeRole)?.roleKey` to one of three components, because the unit of work and the endpoint both differ (`/duties/self-assign` for a room, `/duties/self-assign-group` for an RS chunk, `/dcs/groups/:id/claim` for a DCS group).
+
+**Hand-mirrored files — the convention that will bite you.** There is no monorepo tooling in this repo. Exactly as `backend/shared/utils/roleResolver.js` and `frontend/src/shared/utils/roleResolver.ts` are hand-maintained twins, these mobile files are hand-copied from the web and each names its counterpart in a header comment. Change both sides together:
+
+- `mobile/src/shared/types.ts` ← the web's `shared/lib/types.ts` plus the per-module `types.ts` files it lists.
+- `mobile/src/shared/role-config.ts` ← `frontend/src/modules/shared/role-config/roleConfig.ts` (minus `icon`/`basePath`/`navItems`, which are DOM- and router-specific).
+- `mobile/src/api/client.ts` ← `frontend/src/shared/lib/api.ts` (interceptor behaviour).
+- `mobile/src/shared/store/auth.store.ts` ← the web auth store (SecureStore is async, so `hydrate` returns a promise).
+- `mobile/src/shared/query-client.ts` ← `frontend/src/shared/lib/providers.tsx` defaults.
+- The duty utils under `mobile/src/features/duties/utils/` ← the web's RS grouping, conflict and selector utils.
+
+**The domain invariants below apply on mobile too**, and the mobile code is where they are easiest to break by accident:
+
+- **DCS and RS work on GROUPS; Invigilators work on SINGLE rooms.** Every group-role screen must be group-shaped. `RoleConfig.worksOnGroups` carries this in `mobile/src/shared/role-config.ts`.
+- **The RS partition key must be byte-identical everywhere.** Slots partitioned by `(examGroup | schedule | date | start | end | building)`, sorted numerically by room number, chunked into 5s, keyed `` `${scheduleId}:${buildingId}:${chunkIndex}` ``. The backend stores that string verbatim as `rsSourceKey`/`rsTargetKey`. Mobile implements it **once**, in `features/duties/utils/rsGrouping.ts` — chunk size, room comparator, both partition keys and both folds (slots → groups, the RS's own duties → groups) — and Select Duty, Upcoming Duties, Change Requests and the Dashboard all import it. Re-implementing any part of it desyncs the app against itself as well as against the web.
+- **Room identity is building-aware.** Compare `examRoom.room._id`, never the room-number string.
 
 ## Where the docs are stale
 
@@ -106,4 +148,5 @@ The per-channel split matters: an earlier version let the email log's claim gate
 - Errors: throw `AppError(message, status)`, wrap async controllers in `catchAsync`; `shared/middleware/errorHandler` is mounted last in `app.js`.
 - Emit a notification via `notification.emitter.js` for any user-visible state change; the typed set is `duty_assigned`, `duty_cancelled`, `request_submitted`, `request_approved`, `request_rejected`, `duty_swapped`, `exam_deleted_duty_release`, `duty_reminder` (scheduled), `admin_message` (CS broadcast).
 - `Exam` and `User` are soft-deleted via `isActive` with a Mongoose `pre(/^find/)` hook that excludes them automatically — pass an explicit `isActive` filter to see deleted records.
-- Path alias `@/` → `frontend/src/`.
+- **Mobile feature** = `mobile/src/features/<domain>/` owning its own `api.ts`, `hooks*`, `components/`, `types.ts` and `utils/`. Routes under `mobile/app/` stay thin — they dispatch on the active role and render a feature component.
+- Path alias `@/` → `frontend/src/` in the frontend, `mobile/src/` in the mobile app.

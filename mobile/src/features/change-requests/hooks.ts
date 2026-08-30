@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getMyDcsGroups } from "@/features/duties/api";
 import {
   createChangeRequest,
   getMyChangeRequests,
@@ -22,7 +21,6 @@ export const REQUEST_KEYS = {
   replacements: (dutyId: string) =>
     ["change-requests", "replacements", dutyId] as const,
   swapCandidates: ["change-requests", "swap-candidates"] as const,
-  myDcsGroups: ["dcs", "my-groups"] as const,
   openDcsGroups: ["dcs", "groups", "open"] as const,
 };
 
@@ -43,14 +41,6 @@ export function useSwapCandidates(enabled: boolean) {
     queryKey: REQUEST_KEYS.swapCandidates,
     queryFn: getSwapCandidates,
     enabled,
-  });
-}
-
-export function useMyDcsGroups() {
-  return useQuery({
-    queryKey: REQUEST_KEYS.myDcsGroups,
-    queryFn: getMyDcsGroups,
-    staleTime: 30_000,
   });
 }
 

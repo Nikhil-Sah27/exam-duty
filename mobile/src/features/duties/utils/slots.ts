@@ -8,9 +8,10 @@ import type {
 import { isDutySelectable } from "./lifecycle";
 
 /**
- * Mobile port of frontend/src/modules/shared/exams/selectors/examSelectors.ts.
- * Keep in sync — the `slotId` and `buildingId` it emits are what the RS
- * grouping algorithm partitions on.
+ * The exam read model. Mobile port of
+ * frontend/src/modules/shared/exams/selectors/examSelectors.ts — keep in sync.
+ * The `slotId` and `buildingId` it emits are what the RS grouping algorithm
+ * partitions on, so every screen must build slots through this one function.
  */
 
 /** Groups whose end date is still ahead of us. Per-schedule eligibility is

@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import { formatShortDate, formatTime } from "@/features/exams/format";
-import { compareRoomNumbers } from "../rsGroups";
+import { compareRoomNumbers } from "@/features/duties/utils/rsGrouping";
 import type {
   ChangeRequest,
   DcsGroupRef,

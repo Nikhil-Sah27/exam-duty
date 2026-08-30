@@ -7,11 +7,9 @@ import type { ExamGroupType, UserRole } from "@/shared/types";
  * backend/modules/change-request/changeRequest.repository.js (POPULATE_DEEP),
  * which decides which of these refs come back hydrated.
  *
- * `src/shared/types.ts` also carries a `ChangeRequest`, ported from the web's
- * narrow `modules/change-requests/types` — it knows only swap/drop and has no
- * scope. The web keeps both definitions for the same reason: the narrow one is
- * the legacy admin shape, this one is what the role screens consume. Requests
- * on this screen are always read through the type below.
+ * This is the app's only change-request type. `src/shared/types.ts` used to
+ * carry a second, narrower copy (swap/drop only, no `scope`) that nothing
+ * imported; it has been deleted rather than left to drift further apart.
  */
 
 export type ChangeRequestScope = "duty" | "dcs_group" | "rs_group";

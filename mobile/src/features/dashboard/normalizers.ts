@@ -2,7 +2,7 @@ import type { DcsGroup, Duty } from "@/shared/types";
 import {
   groupRSDutiesIntoUpcomingGroups,
   type RSUpcomingGroup,
-} from "@/features/duties/utils/upcoming";
+} from "@/features/duties/utils/rsGrouping";
 import type {
   DashboardDutyItem,
   DashboardRoleLabel,
@@ -144,9 +144,10 @@ function byGroupAsc(a: RSUpcomingGroup, b: RSUpcomingGroup): number {
 }
 
 /**
- * Every non-cancelled duty is a candidate group member; the grouping util
- * partitions by schedule + building and chunks by 5, and the split below is
- * only about whether the schedule's end has passed.
+ * Every non-cancelled RS duty is a candidate group member; the grouping util
+ * partitions by schedule + building, drops the teacher's non-RS duties and
+ * chunks by 5, and the split below is only about whether the schedule's end
+ * has passed.
  */
 export function normalizeRsGroupsUpcoming(
   duties: readonly Duty[]

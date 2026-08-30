@@ -12,7 +12,11 @@ import { getRoleConfig, type OperationalRole } from "@/shared/role-config";
 import { useAuthStore } from "@/shared/store/auth.store";
 import type { ExamRoomAssignment, ExamSchedule } from "@/shared/types";
 import { formatFullDate, formatTime, toDateKey } from "../format";
-import { useDutiesByTeacher, useExamDutyStatus, useExamGroupDetails } from "../hooks";
+import {
+  useDutiesByTeacher,
+  useExamDutyStatus,
+  useExamGroupDetails,
+} from "@/features/duties/hooks/useExamData";
 import {
   ASSIGNMENT_COLOR,
   ASSIGNMENT_LABEL,

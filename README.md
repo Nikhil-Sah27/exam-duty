@@ -20,11 +20,16 @@ Group vs. individual is the key mental model: **DCS and RS work on whole groups*
 | Layer | Technology |
 | --- | --- |
 | Frontend | Vite 6 · React 19 · TypeScript 5 · Tailwind CSS 4 · React Router 7 |
+| Mobile | Expo SDK 57 · React Native 0.86 · expo-router · TypeScript 6 |
 | State | Zustand (client state) · TanStack React Query (server cache) |
 | Backend | Node.js · Express 4 |
 | Database | MongoDB (Mongoose ODM) |
 | Auth | JWT (bcrypt-hashed passwords) |
-| Dev | nodemon (backend hot-reload) · Vite HMR (frontend) |
+| Dev | nodemon (backend hot-reload) · Vite HMR (frontend) · Expo Go / Metro (mobile) |
+
+The mobile app is the **operational** surface only — Invigilator, RS and DCS.
+Exam planning and change-request approval are CS work and stay on the web. See
+`mobile/README.md`.
 
 ## Feature Overview
 
@@ -310,6 +315,26 @@ exam-duty/
 │   │       └── ui/                  # Reusable primitives
 │   └── package.json
 │
+├── mobile/                          # Expo app — Invigilator / RS / DCS only
+│   ├── app/                         # expo-router file routes
+│   │   ├── _layout.tsx              # Providers + Stack.Protected auth guard
+│   │   ├── index.tsx                # Forwarder → dashboard / select-role / login
+│   │   ├── (auth)/                  # login, select-role
+│   │   └── (app)/                   # Six-tab bar: dashboard, exams, select-duty,
+│   │                                #   upcoming-duties, change-requests, notifications
+│   ├── src/
+│   │   ├── api/                     # axios client (base URL + token interceptors), auth calls
+│   │   ├── features/
+│   │   │   ├── dashboard/           # One dashboard, three role shapes
+│   │   │   ├── exams/               # Read-only exam browser
+│   │   │   ├── duties/              # Select Duty + Upcoming Duties, per role
+│   │   │   ├── change-requests/     # Swap / move / drop panels, per role
+│   │   │   └── notifications/       # Alerts inbox + channel preferences
+│   │   ├── push/                    # Expo push token registration, routing, /push/tokens
+│   │   └── shared/                  # Auth store (SecureStore), role config, mirrored types
+│   ├── app.json                     # Expo config — scheme, plugins, extra.apiUrl
+│   └── package.json
+│
 ├── README.md
 ├── APP_FLOW.md                      # End-to-end walkthrough
 ├── CREDENTIALS.md                   # Seeded test logins
@@ -404,6 +429,20 @@ base URL is a separate variable, `VITE_API_URL`, defaulting to the same-origin `
 set it only when a built app must call a backend on another origin, with no Vite proxy in
 front of it. Both are documented in `frontend/.env.example`.)
 
+**Mobile** (optional — skip it if you are only working on the web app)
+```bash
+cd ../mobile
+npm install --legacy-peer-deps
+```
+
+`--legacy-peer-deps` is required, not a workaround for a broken lockfile: two
+`react-native-worklets` versions inside Expo's own dependency tree fail npm's strict
+resolver. `npx expo-doctor` passes regardless.
+
+Then copy `mobile/.env.example` to `mobile/.env` and set `EXPO_PUBLIC_API_URL` to the
+backend's **LAN** address including `/api` — a phone cannot reach your laptop's
+`localhost`. `mobile/README.md` covers both the LAN-IP and the ngrok route.
+
 ### Running
 
 ```bash
@@ -412,10 +451,20 @@ cd backend && npm run dev
 
 # Terminal 2 — frontend
 cd frontend && npm run dev
+
+# Terminal 3 — mobile, only when you need it (own terminal: expo start is interactive)
+cd mobile && npx expo start
 ```
 
 - Frontend: http://localhost:5173
 - Backend API: http://localhost:5001
+- Mobile: scan the Metro QR code with Expo Go, or press `i` / `a` for a simulator
+
+From the repo root, `npm run dev` starts backend + frontend together. It deliberately
+leaves the mobile app out: `expo start` owns its terminal — it renders a QR code and
+reads single keypresses (`i`, `a`, `r`, `j`) from raw stdin, neither of which survives
+`concurrently`'s line-prefixed multiplexing. `npm run dev:mobile` is there as a
+shortcut, but run it in its own terminal.
 
 ### Seed Data
 

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { formatShortDate, formatTime } from "@/features/exams/format";
-import { useDutiesByTeacher } from "@/features/exams/hooks";
+import { useDutiesByTeacher } from "@/features/duties/hooks/useExamData";
 import { getTypeColor } from "@/features/exams/status";
 import { useAuthStore } from "@/shared/store/auth.store";
 import type { Duty } from "@/shared/types";
@@ -76,10 +76,7 @@ export default function InvigilatorRequests() {
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  // `role` is on every duty the backend writes today but absent on legacy rows,
-  // and the shared Duty type does not carry it — widen here rather than edit a
-  // type the other screens share.
-  const allDuties: (Duty & { role?: string })[] = useMemo(
+  const allDuties: Duty[] = useMemo(
     () => dutiesQuery.data ?? [],
     [dutiesQuery.data]
   );

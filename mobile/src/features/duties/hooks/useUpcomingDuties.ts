@@ -3,10 +3,11 @@ import type { DcsGroup, Duty } from "@/shared/types";
 import { useAuthStore } from "@/shared/store/auth.store";
 import { buildDutySections, countDates, type DutySection } from "../utils/sections";
 import {
-  filterUpcomingDuties,
+  filterUpcomingRsDuties,
   groupRSDutiesIntoUpcomingGroups,
   type RSUpcomingGroup,
-} from "../utils/upcoming";
+} from "../utils/rsGrouping";
+import { filterUpcomingDuties } from "../utils/upcoming";
 import { useMyDcsGroups } from "./useDcsGroups";
 import { useDutiesByTeacher } from "./useExamData";
 
@@ -18,7 +19,11 @@ import { useDutiesByTeacher } from "./useExamData";
  *
  * Invigilator and RS both read `/duties?teacher=:id` — RS then folds those
  * per-room rows back into the groups they were claimed as, so an RS holding
- * five rooms sees ONE card, not five. DCS reads its persisted groups directly.
+ * five rooms sees ONE card, not five. That fold runs on RS-role duties only:
+ * the endpoint returns every role's duties and a teacher can hold more than
+ * one, and a stray invigilator room in the same schedule + building would
+ * shift the chunk boundaries the group id is derived from. DCS reads its
+ * persisted groups directly.
  */
 export interface UpcomingResult<T> {
   sections: DutySection<T>[];
@@ -68,7 +73,8 @@ export function useRsUpcomingGroups(): RsUpcomingResult {
   const query = useDutiesByTeacher(userId);
 
   const groups = useMemo(
-    () => groupRSDutiesIntoUpcomingGroups(filterUpcomingDuties(query.data ?? [])),
+    () =>
+      groupRSDutiesIntoUpcomingGroups(filterUpcomingRsDuties(query.data ?? [])),
     [query.data]
   );
 

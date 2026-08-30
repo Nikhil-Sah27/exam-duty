@@ -9,7 +9,7 @@ import {
   View,
 } from "react-native";
 import type { ExamGroup, ExamGroupStatus } from "@/shared/types";
-import { useExamGroups } from "../hooks";
+import { useExamGroups } from "@/features/duties/hooks/useExamData";
 import {
   bucketByStatus,
   CIE_TYPES,

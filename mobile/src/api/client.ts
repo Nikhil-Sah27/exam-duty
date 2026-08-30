@@ -35,7 +35,7 @@ const resolveBaseUrl = (): string => {
     // generic "Network Error" against a host that was never set.
     throw new Error(
       "API base URL is not configured. Set EXPO_PUBLIC_API_URL in mobile/.env " +
-        "(e.g. EXPO_PUBLIC_API_URL=http://192.168.1.5:5091/api) or expo.extra.apiUrl " +
+        "(e.g. EXPO_PUBLIC_API_URL=http://192.168.0.2:5001/api) or expo.extra.apiUrl " +
         "in app.json, then restart the bundler. See mobile/README.md."
     );
   }

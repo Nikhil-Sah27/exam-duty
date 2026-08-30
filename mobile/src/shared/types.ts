@@ -8,13 +8,17 @@
  *   • frontend/src/modules/exams/types.ts                  (exam group / room / duty flags)
  *   • frontend/src/modules/duties/types.ts                 (Duty)
  *   • frontend/src/modules/notifications/types.ts          (Notification)
- *   • frontend/src/modules/change-requests/types/index.ts  (ChangeRequest)
  *   • frontend/src/modules/dcs/select-duty/types.ts        (DcsGroup)
  *   • frontend/src/modules/rs/select-duty/types.ts         (RSDutyGroup)
  *
  * Only the shapes the mobile screens consume are ported. Admin-only shapes
  * (broadcast targeting, exam authoring, audit) are deliberately left out —
  * the mobile app is Invigilator / RS / DCS only.
+ *
+ * Change-request shapes live in src/features/change-requests/types.ts, which
+ * covers all five request types and the `scope` field. This file used to carry
+ * a second, narrower copy that no code imported and that had drifted out of
+ * date; a mirror nobody reads but everybody trusts is worse than no mirror.
  */
 
 /* ------------------------------------------------------------------ user */
@@ -170,13 +174,28 @@ export type DutyStatusMap = Record<string, RoomDutyFlags>;
 
 export type DutyStatus = "assigned" | "completed" | "cancelled";
 
+/** Which of a room's three independent role slots this duty fills. */
+export type DutyRole = "dcs" | "rs" | "invigilator";
+
 /**
  * A Duty references EITHER the legacy `exam` model OR the newer
  * `examSchedule` + `examRoom` pair. Both are populated lazily — consumers
  * must be defensive.
+ *
+ * Verified field-by-field against backend/modules/duty/duty.model.js,
+ * duty.repository.js `POPULATE_FIELDS`, and a live `GET /api/duties` response.
  */
 export interface Duty {
   _id: string;
+  /**
+   * Required by the schema, so every duty written since the field landed
+   * carries it — but it is genuinely absent on older rows (10 of 116 in the
+   * current database, and 5 of the 7 duties `invigilator@examduty.com` holds),
+   * which is why this is optional rather than required. A teacher can hold
+   * several roles at once, so this is the only way to tell which of their
+   * duties belong on a given role's screen.
+   */
+  role?: DutyRole;
   exam: {
     _id: string;
     name: string;
@@ -211,9 +230,16 @@ export interface Duty {
     _id: string;
     name: string;
     email: string;
-    department: string;
+    /** The User schema defaults `department` to null — 81 of 116 duties come
+     *  back with it null today. */
+    department: string | null;
   };
   room: string;
+  /** Physical Room id, or null on rows written before roomRef existed. Never
+   *  populated by the duty repository, so it stays an id string — the room's
+   *  details come from `examRoom.room`. `room` above is only a display label
+   *  and collides across buildings; this is the building-scoped identity. */
+  roomRef: string | null;
   date: string;
   startTime: string;
   endTime: string;
@@ -356,63 +382,6 @@ export type DcsGroupState =
   | "OCCUPIED" // claimed by another DCS
   | "MINE" // claimed by the viewer (context only, not selectable)
   | "CONFLICT"; // time overlaps with another selection or a held duty
-
-/* --------------------------------------------------------- change request */
-
-export type ChangeRequestType = "swap" | "drop";
-export type ChangeRequestStatus =
-  | "pending"
-  | "approved"
-  | "rejected"
-  | "cancelled_exam_deleted";
-
-export interface ChangeRequest {
-  _id: string;
-  /**
-   * Populated only for duty-scope requests. DCS- and RS-scoped requests have
-   * `duty: null` — their targets live on the group fields instead. Even for
-   * duty-scope requests `exam` may be null, because duties created through the
-   * ExamGroup / ExamSchedule / ExamRoom flow carry no legacy Exam document.
-   */
-  duty: {
-    _id: string;
-    room: string;
-    date: string;
-    startTime: string;
-    endTime: string;
-    status: string;
-    teacher: string;
-    exam: {
-      _id: string;
-      name: string;
-      department: string;
-    } | null;
-  } | null;
-  requestedBy: {
-    _id: string;
-    name: string;
-    email: string;
-    department: string;
-  };
-  type: ChangeRequestType;
-  reason: string;
-  swapWith: {
-    _id: string;
-    name: string;
-    email: string;
-    department: string;
-  } | null;
-  status: ChangeRequestStatus;
-  reviewedBy: {
-    _id: string;
-    name: string;
-    email: string;
-  } | null;
-  reviewedAt: string | null;
-  reviewNote: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
 
 /* ---------------------------------------------------------- notification */
 

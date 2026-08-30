@@ -2,7 +2,7 @@ import DutyCard from "../components/DutyCard";
 import DutyListScreen from "../components/DutyListScreen";
 import { useRsUpcomingGroups } from "../hooks/useUpcomingDuties";
 import { pluralize } from "../utils/format";
-import type { RSUpcomingGroup } from "../utils/upcoming";
+import type { RSUpcomingGroup } from "../utils/rsGrouping";
 
 /**
  * RS Upcoming Duties — one card per GROUP. An RS holding five rooms sees a

@@ -1,18 +1,22 @@
 import { useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text } from "react-native";
 import { formatShortDate, formatTime } from "@/features/exams/format";
-import { useAvailableDutySlots, useDutiesByTeacher } from "@/features/exams/hooks";
+import {
+  useAvailableDutySlots,
+  useDutiesByTeacher,
+} from "@/features/duties/hooks/useExamData";
 import { getTypeColor } from "@/features/exams/status";
 import { useAuthStore } from "@/shared/store/auth.store";
 import type { RSDutyGroup } from "@/shared/types";
-import { useCreateChangeRequest, useMyChangeRequests } from "../hooks";
 import {
+  compareRsGroups,
   filterUpcomingRsDuties,
-  groupDutiesIntoRsGroups,
-  groupSlotsIntoRsGroups,
+  groupRoomsIntoRSGroups,
+  groupRSDutiesIntoUpcomingGroups,
   isSwappableRsGroup,
-  type RsOwnedGroup,
-} from "../rsGroups";
+  type RSUpcomingGroup,
+} from "@/features/duties/utils/rsGrouping";
+import { useCreateChangeRequest, useMyChangeRequests } from "../hooks";
 import { isSameDay, overlaps, pendingRsSourceKeys } from "../utils";
 import EmptyState from "./EmptyState";
 import OwnedItemCard, { type OwnedBadge } from "./OwnedItemCard";
@@ -47,14 +51,18 @@ export default function RsRequests() {
   const requestsQuery = useMyChangeRequests();
   const createRequest = useCreateChangeRequest();
 
-  const [source, setSource] = useState<RsOwnedGroup | null>(null);
+  const [source, setSource] = useState<RSUpcomingGroup | null>(null);
   const [target, setTarget] = useState<RSDutyGroup | null>(null);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const allDuties = useMemo(() => dutiesQuery.data ?? [], [dutiesQuery.data]);
+  // The fold preserves source order; this screen lists groups chronologically.
   const ownedGroups = useMemo(
-    () => groupDutiesIntoRsGroups(filterUpcomingRsDuties(allDuties)),
+    () =>
+      groupRSDutiesIntoUpcomingGroups(filterUpcomingRsDuties(allDuties)).sort(
+        compareRsGroups
+      ),
     [allDuties]
   );
 
@@ -84,7 +92,7 @@ export default function RsRequests() {
       (d) => d.status === "assigned" && !sourceDutyIds.has(d._id)
     );
 
-    return groupSlotsIntoRsGroups(slotsQuery.data).filter((g) => {
+    return groupRoomsIntoRSGroups(slotsQuery.data).filter((g) => {
       if (g.groupId === source.groupId) return false;
       // A group is only a target if EVERY room in it is free for RS — the
       // whole bundle moves together, so one taken room disqualifies it.

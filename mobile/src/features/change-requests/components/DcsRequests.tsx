@@ -3,11 +3,11 @@ import { ActivityIndicator, StyleSheet, Text } from "react-native";
 import { formatShortDate, formatTime } from "@/features/exams/format";
 import { getTypeColor } from "@/features/exams/status";
 import type { DcsGroup } from "@/shared/types";
-import { compareRoomNumbers } from "../rsGroups";
+import { useMyDcsGroups } from "@/features/duties/hooks/useDcsGroups";
+import { compareRoomNumbers } from "@/features/duties/utils/rsGrouping";
 import {
   useCreateChangeRequest,
   useMyChangeRequests,
-  useMyDcsGroups,
   useOpenDcsGroups,
 } from "../hooks";
 import { isSameDay, overlaps, pendingDcsSourceIds } from "../utils";

@@ -10,9 +10,15 @@ import {
 import { buildDutySlots, selectActiveExamGroups } from "../utils/slots";
 
 /**
- * Mobile port of frontend/src/modules/shared/exams/hooks/useSharedExamData.ts.
- * The query keys are copied verbatim so an invalidation written against the
- * web's vocabulary keeps working here.
+ * The app's whole exam read model. Mobile port of
+ * frontend/src/modules/shared/exams/hooks/useSharedExamData.ts — the query keys
+ * are copied verbatim so an invalidation written against the web's vocabulary
+ * keeps working here, and every mobile screen that reads exam data shares one
+ * cache entry per group.
+ *
+ * The exams feature had a second copy of these hooks (`features/exams/hooks.ts`)
+ * over a second copy of the selectors; both are gone. One cache, one pipeline —
+ * a slot that is invisible on one surface is invisible on all of them.
  */
 
 export const DUTY_QUERY_KEYS = {
@@ -22,6 +28,30 @@ export const DUTY_QUERY_KEYS = {
   duties: (teacherId: string | undefined) =>
     ["shared", "duties-by-teacher", teacherId] as const,
 };
+
+export function useExamGroups(enabled = true) {
+  return useQuery({
+    queryKey: DUTY_QUERY_KEYS.groups,
+    queryFn: fetchExamGroups,
+    enabled,
+  });
+}
+
+export function useExamGroupDetails(groupId: string | null) {
+  return useQuery({
+    queryKey: DUTY_QUERY_KEYS.details(groupId as string),
+    queryFn: () => fetchExamGroupDetails(groupId as string),
+    enabled: Boolean(groupId),
+  });
+}
+
+export function useExamDutyStatus(groupId: string | null) {
+  return useQuery({
+    queryKey: DUTY_QUERY_KEYS.dutyStatus(groupId as string),
+    queryFn: () => fetchExamDutyStatus(groupId as string),
+    enabled: Boolean(groupId),
+  });
+}
 
 export function useDutiesByTeacher(teacherId: string | undefined) {
   return useQuery({
@@ -38,19 +68,21 @@ export interface AvailableDutySlotsResult {
 }
 
 /**
- * Every active exam group's schedules + duty status, composed into one flat
- * slot list. React Query caches each group independently, so refreshing one
- * group's duty status does not refetch the others.
+ * Every (schedule × room) slot across the still-open exam groups, with its
+ * per-role occupancy attached. React Query caches each group independently, so
+ * refreshing one group's duty status does not refetch the others. This is the
+ * source both Select Duty and the RS swap-target picker derive groups from, so
+ * what is offered as a swap target is exactly what Select Duty would offer.
+ *
+ * `enabled` is honoured because this is a fan-out — two requests per open exam
+ * group on top of the group list. Callers that only need it once a picker is
+ * opened should not pay for it on screen load.
  */
-export function useAvailableDutySlots(): AvailableDutySlotsResult {
-  const groupsQuery = useQuery({
-    queryKey: DUTY_QUERY_KEYS.groups,
-    queryFn: fetchExamGroups,
-  });
+export function useAvailableDutySlots(enabled = true): AvailableDutySlotsResult {
+  const groupsQuery = useExamGroups(enabled);
 
-  const activeGroups = groupsQuery.data
-    ? selectActiveExamGroups(groupsQuery.data)
-    : [];
+  const activeGroups =
+    enabled && groupsQuery.data ? selectActiveExamGroups(groupsQuery.data) : [];
 
   const detailsQueries = useQueries({
     queries: activeGroups.map((g) => ({
