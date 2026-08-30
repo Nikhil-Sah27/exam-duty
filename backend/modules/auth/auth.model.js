@@ -53,13 +53,17 @@ const userSchema = new mongoose.Schema(
       default: true,
     },
     // Per-user channel opt-outs. In-app notifications are always delivered;
-    // these only gate the email and WhatsApp copies, so switching either off
-    // never hides a duty change from the user inside the app.
+    // these only gate the email, WhatsApp and push copies, so switching any of
+    // them off never hides a duty change from the user inside the app.
     emailNotifications: {
       type: Boolean,
       default: true,
     },
     whatsappNotifications: {
+      type: Boolean,
+      default: true,
+    },
+    pushNotifications: {
       type: Boolean,
       default: true,
     },

@@ -254,10 +254,13 @@ const sendBroadcast = async (body, senderId) => {
  * are unaffected by design: opting out of a channel must not make a duty
  * change invisible.
  *
- * Both fields are optional; only the ones supplied are written, so a client
- * can toggle one without having to send the other's current value back.
+ * Every field is optional; only the ones supplied are written, so a client
+ * can toggle one without having to send the others' current values back.
  */
-const updateChannelPreferences = async (userId, { emailNotifications, whatsappNotifications }) => {
+const updateChannelPreferences = async (
+  userId,
+  { emailNotifications, whatsappNotifications, pushNotifications },
+) => {
   const update = {};
   if (emailNotifications !== undefined) {
     if (typeof emailNotifications !== "boolean") {
@@ -271,22 +274,29 @@ const updateChannelPreferences = async (userId, { emailNotifications, whatsappNo
     }
     update.whatsappNotifications = whatsappNotifications;
   }
+  if (pushNotifications !== undefined) {
+    if (typeof pushNotifications !== "boolean") {
+      throw new AppError("pushNotifications must be true or false", 400);
+    }
+    update.pushNotifications = pushNotifications;
+  }
 
   if (!Object.keys(update).length) {
     throw new AppError(
-      "Provide emailNotifications and/or whatsappNotifications as booleans",
+      "Provide emailNotifications, whatsappNotifications and/or pushNotifications as booleans",
       400,
     );
   }
 
   const user = await User.findByIdAndUpdate(userId, update, { new: true }).select(
-    "emailNotifications whatsappNotifications",
+    "emailNotifications whatsappNotifications pushNotifications",
   );
   if (!user) throw new AppError("User not found", 404);
 
   return {
     emailNotifications: user.emailNotifications !== false,
     whatsappNotifications: user.whatsappNotifications !== false,
+    pushNotifications: user.pushNotifications !== false,
   };
 };
 

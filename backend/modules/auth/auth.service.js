@@ -27,6 +27,7 @@ const toUserDTO = (user, activeRole = null) => ({
   activeRole: activeRole || (user.roles && user.roles.length === 1 ? user.roles[0] : null),
   emailNotifications: user.emailNotifications !== false,
   whatsappNotifications: user.whatsappNotifications !== false,
+  pushNotifications: user.pushNotifications !== false,
 });
 
 const register = async ({ name, email, password, phone, designation, roles }) => {

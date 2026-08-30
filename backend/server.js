@@ -6,6 +6,7 @@ const connectDB = require("./shared/config/db");
 const reminderScheduler = require("./modules/reminder/reminder.scheduler");
 const emailTransport = require("./modules/email/email.transport");
 const whatsappProviders = require("./modules/whatsapp/providers");
+const pushService = require("./modules/push/push.service");
 
 // 5001, not 5000: macOS gives :5000 to ControlCenter (AirPlay Receiver), and the
 // Vite proxy defaults to the same port — a fresh clone with no PORT set must
@@ -39,6 +40,15 @@ connectDB().then(() => {
       console.log(
         "[whatsapp] no provider configured — messages will be logged and skipped. " +
           "Set WHATSAPP_PROVIDER (cloud_api | webjs) to enable.",
+      );
+    }
+
+    // Push needs no credentials, so it is on unless explicitly switched off.
+    // Only the off case is worth a line — the on case sends nothing anyway
+    // until a device registers.
+    if (!pushService.isConfigured()) {
+      console.log(
+        "[push] PUSH_ENABLED=false — pushes will be logged and skipped.",
       );
     }
 

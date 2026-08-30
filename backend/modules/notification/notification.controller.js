@@ -58,6 +58,7 @@ const updateChannelPreferences = catchAsync(async (req, res) => {
   const data = await notificationService.updateChannelPreferences(req.user.id, {
     emailNotifications: req.body?.emailNotifications,
     whatsappNotifications: req.body?.whatsappNotifications,
+    pushNotifications: req.body?.pushNotifications,
   });
   res.status(200).json({ success: true, data });
 });
