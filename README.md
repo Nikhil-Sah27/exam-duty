@@ -77,6 +77,8 @@ Plus two more that the email/reminder work added: `duty_reminder` (scheduled) an
 
 Notifications reference either a `Duty` or a `ChangeRequest` for deep-linking. Unread count and read-all endpoints back the UI bell.
 
+Every emit also fans out to the three outbound channels — email, WhatsApp, and push — off that same emitter, so a module that emits never has to remember a second "and also send a…" step. Each channel's dispatcher decides which types warrant a copy (`email.dispatcher.js`, `whatsapp.dispatcher.js`, `push.dispatcher.js`), and today all three cover the same set: every type above except `duty_reminder`, which the reminder job delivers under its own at-most-once claim. The three are queued independently, so a dead SMTP host, a dropped WhatsApp session, and a push failure can each only take out their own channel.
+
 ### Email
 Every notification type above except `duty_reminder` is emailed through the same emitter that writes the in-app copy — modules keep calling `notification.emitter.js` and the email follows automatically (`backend/modules/email/email.dispatcher.js` decides which types warrant one).
 
@@ -89,7 +91,7 @@ Every notification type above except `duty_reminder` is emailed through the same
 Templates live in `backend/modules/email/email.templates.js` — table-based layout, inline styles, no external assets, and a plain-text twin for every HTML body.
 
 ### Duty Reminders
-An in-process cron (`backend/modules/reminder/`) reminds every teacher about upcoming duties **1 week**, **1 day**, and **2 hours** ahead, on all three channels — in-app notification, email, and WhatsApp (`deliverDigest` in `reminder.service.js` fans out to one branch each).
+An in-process cron (`backend/modules/reminder/`) reminds every teacher about upcoming duties **1 week**, **1 day**, and **2 hours** ahead, on all four channels — in-app notification, email, WhatsApp, and push (`deliverDigest` in `reminder.service.js` fans out to one branch each).
 
 Two kinds of window, because the two kinds of statement differ:
 
@@ -100,9 +102,13 @@ Two kinds of window, because the two kinds of statement differ:
 
 Digesting is the point: a DCS supervising five rooms tomorrow gets one "you have 5 duties tomorrow" message, not five.
 
-Idempotency comes from one shared key suffix — `reminder:<lead>:<teacherId>:<bucket>` — claimed **once per channel, independently**, before that channel delivers: `notify:<key>` on `Notification`, the bare `<key>` on `EmailLog`, and `wa:<key>` on `WhatsAppLog`. Each of the three carries its own unique partial index, so a duplicate claim is a `11000` that the repository turns into "already delivered, skip".
+Idempotency comes from one shared key suffix — `reminder:<lead>:<teacherId>:<bucket>` — claimed **once per channel, independently**, before that channel delivers: `notify:<key>` on `Notification`, the bare `<key>` on `EmailLog`, `wa:<key>` on `WhatsAppLog`, and `push:<key>` on `PushLog`. Each carries its own unique partial index, so a duplicate claim is a `11000` that the repository turns into "already delivered, skip".
 
-The per-channel split is deliberate. An earlier design let the `EmailLog` claim gate all of them, which coupled things that fail separately: a teacher with no email address consumed the shared claim and silently lost the in-app notification too. Three claims give three independent outcomes — and re-running is still safe, which is what lets the cron tick every 15 minutes (needed for the 2-hour window to land accurately) and lets an admin press **Run now** without risking duplicates.
+Push claims one key *per device* — `push:<key>#<token>` — because it is the only channel that fans out: a teacher with a phone and a tablet is two sends with two outcomes, and a single user-level claim would let whichever device went first silently gate the rest.
+
+The per-channel split is deliberate. An earlier design let the `EmailLog` claim gate all of them, which coupled things that fail separately: a teacher with no email address consumed the shared claim and silently lost the in-app notification too. Four claims give four independent outcomes — and re-running is still safe, which is what lets the cron tick every 15 minutes (needed for the 2-hour window to land accurately) and lets an admin press **Run now** without risking duplicates.
+
+A run reports each channel separately: `byChannel.{inApp,email,whatsapp,push}` rolls the per-window statuses up into `sent` / `duplicate` / `failed` / `skipped`, and `totals` sums the three outbound channels. Push's own statuses fold in there too — `unregistered` (Expo says the app is gone and the token has been deleted) and `no_device` (nobody has registered one) count as skipped, not failed.
 
 Known trade-off: a duty assigned *after* that day's digest has gone out shares the already-claimed bucket, so it gets no day-lead reminder of its own. It still triggers an immediate `duty_assigned` email and the 2-hour nudge.
 
@@ -110,6 +116,8 @@ Known trade-off: a duty assigned *after* that day's digest has gone out shares t
 CS gets a **Send Notification** page (`/notifications`) to message staff directly. Recipients are targeted by **role** and/or **department**; the two filters intersect, so "RS" + "CSE" means RS staff in CSE. An untargeted send is rejected — selecting every role is the explicit way to reach everyone.
 
 The screen resolves and displays the recipient list (and how many will actually be reached on each channel) before anything sends, and the same page carries the reminder scheduler's status, SMTP and WhatsApp health, recent send counts, a queue preview, and manual triggers.
+
+The in-app copy always goes out. Email is on unless switched off (`sendEmail`); WhatsApp and push are opt-in ticks (`sendWhatsApp`, `sendPush`), because both interrupt a personal device. The preview reports reach per channel — `withEmail` / `withWhatsApp` / `withPush`, each with its "no address / no number / no device" and "opted out" counterpart, plus `pushDevices`, the number of *sends* those reachable people represent, since push addresses devices and one person may have several. A send answers with per-status counts for each channel it was asked to use; the push block additionally separates `attempted` (messages, i.e. devices) from `reached` (people) and `noDevice`.
 
 ### WhatsApp
 The third delivery channel, hanging off the same emitter as email. Duty reminders, duty assigned/cancelled, change-request outcomes, and admin broadcasts all go out on it.
@@ -557,9 +565,9 @@ Invigilator workload targets and progress, computed on demand from current DB st
 | GET | `/` · `/unread-count` | Read. |
 | PATCH | `/read-all` · `/:id/read` | Mark read. |
 | DELETE | `/` · `/:id` | Delete all / one. |
-| POST | `/broadcast/preview` | **CS.** Resolve role/department filters to a recipient list. No side effects. |
-| POST | `/broadcast` | **CS.** Send an in-app notification (and optional email / WhatsApp) to the targeted staff. |
-| PATCH | `/preferences` | Toggle the caller's own email and/or WhatsApp copies. |
+| POST | `/broadcast/preview` | **CS.** Resolve role/department filters to a recipient list, with reach per channel (email / WhatsApp / push). No side effects. |
+| POST | `/broadcast` | **CS.** Send an in-app notification (and optional email / WhatsApp / push) to the targeted staff. |
+| PATCH | `/preferences` | Toggle the caller's own email, WhatsApp and/or push copies. |
 | PATCH | `/preferences/email` | Legacy alias for the above. |
 
 ### Reminders (`/reminders`)

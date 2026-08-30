@@ -30,9 +30,10 @@ export interface User {
   designation?: string | null;
   roles: UserRole[];
   activeRole: UserRole | null;
-  /** Email / WhatsApp copies. In-app delivery is never affected by these. */
+  /** Email / WhatsApp / push copies. In-app delivery is never affected by these. */
   emailNotifications?: boolean;
   whatsappNotifications?: boolean;
+  pushNotifications?: boolean;
 }
 
 /* ------------------------------------------------------------------ auth */

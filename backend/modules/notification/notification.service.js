@@ -182,13 +182,13 @@ const previewBroadcastRecipients = async ({ roles = [], departments = [] } = {})
 
 /**
  * Send an admin broadcast: an in-app notification to every resolved recipient
- * plus, when requested, an email copy.
+ * plus, when requested, an email, WhatsApp and/or push copy.
  *
  * The in-app write is a single insertMany and happens first — it is the
- * channel that always works. Email goes out afterwards through the bounded
- * batch sender and reports per-status counts, so a partial SMTP failure is
- * visible in the response rather than silent. Neither an SMTP outage nor an
- * unconfigured transport fails the call: the message still reached everyone
+ * channel that always works. The outbound channels go out afterwards through
+ * their own batch senders and each reports per-status counts, so a partial
+ * failure is visible in the response rather than silent. No transport outage
+ * fails the call, configured or not: the message still reached everyone
  * inside the app.
  *
  * Deliberately not deduped — the same announcement may legitimately be sent
@@ -229,6 +229,7 @@ const sendBroadcast = async (body, senderId) => {
     notified: recipients.length,
     email: { requested: input.sendEmail },
     whatsapp: { requested: input.sendWhatsApp },
+    push: { requested: input.sendPush },
   };
 
   const payload = (r) => ({
@@ -277,6 +278,38 @@ const sendBroadcast = async (body, senderId) => {
       attempted: reachable.length,
       noNumber: recipients.length - reachable.length,
       ...whatsappService.summarize(sends),
+    };
+  }
+
+  if (input.sendPush) {
+    // The only channel whose unit of work is a device rather than a person: a
+    // recipient with a phone and a tablet is two sends. `attempted` therefore
+    // counts messages, and `reached` counts the people behind them, so the
+    // two numbers stay comparable with the other channels'.
+    const devices = await pushService.devicesForUsers(recipients.map((r) => String(r._id)));
+    const byUser = new Map(recipients.map((r) => [String(r._id), r]));
+
+    const messages = devices.map((device) => {
+      const r = byUser.get(String(device.user));
+      return {
+        to: device.token,
+        type: "admin_message",
+        recipient: r._id,
+        platform: device.platform,
+        optedOut: r.pushNotifications === false,
+        data: payload(r),
+      };
+    });
+
+    const sends = await pushService.sendBatch(messages);
+    const reached = new Set(devices.map((device) => String(device.user))).size;
+
+    result.push = {
+      requested: true,
+      attempted: messages.length,
+      reached,
+      noDevice: recipients.length - reached,
+      ...pushService.summarize(sends),
     };
   }
 
