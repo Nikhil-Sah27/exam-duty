@@ -9,11 +9,19 @@ const DESIGNATION_ROLE_MAP = {
 };
 
 const OTHER_DESIGNATION = "Other";
-const SELECTABLE_ROLES_FOR_OTHER = ["cs", "dcs", "rs", "invigilator"];
+
+// "cs" (Controller of Superintendents) is the full-admin role and is
+// deliberately NOT in the default selectable set. It is privileged: it may be
+// granted ONLY by a caller that is already authenticated as CS — i.e. the
+// requireRole("cs")-guarded POST/PUT /users paths, which pass { allowCs: true }.
+// Any other path (the legacy public /auth/register, self-service, etc.) can
+// never mint an admin, even if the route guard were somehow bypassed.
+const SELECTABLE_ROLES_FOR_OTHER = ["dcs", "rs", "invigilator"];
+const PRIVILEGED_ROLE = "cs";
 
 // Returns:
 //   • an array of roles fixed by the designation (caller cannot override)
-//   • null when the designation is "Other" (caller picks a single role from SELECTABLE_ROLES_FOR_OTHER)
+//   • null when the designation is "Other" (caller picks a single role from the allowed set)
 const resolveRolesFromDesignation = (designation) => {
   if (designation === OTHER_DESIGNATION) return null;
   return DESIGNATION_ROLE_MAP[designation] || null;
@@ -21,7 +29,12 @@ const resolveRolesFromDesignation = (designation) => {
 
 // Enforce the rules on create/update. Returns the roles array to persist.
 // Throws if the requested roles violate the designation rule.
-const enforceRolesForDesignation = (designation, requestedRoles) => {
+// `allowCs` must be true only when the CALLER is already a verified CS admin.
+const enforceRolesForDesignation = (
+  designation,
+  requestedRoles,
+  { allowCs = false } = {}
+) => {
   const fixed = resolveRolesFromDesignation(designation);
   if (fixed) return fixed;
 
@@ -34,7 +47,10 @@ const enforceRolesForDesignation = (designation, requestedRoles) => {
     throw err;
   }
   const [role] = requestedRoles;
-  if (!SELECTABLE_ROLES_FOR_OTHER.includes(role)) {
+  const allowed = allowCs
+    ? [...SELECTABLE_ROLES_FOR_OTHER, PRIVILEGED_ROLE]
+    : SELECTABLE_ROLES_FOR_OTHER;
+  if (!allowed.includes(role)) {
     const err = new Error(`Role "${role}" is not selectable`);
     err.statusCode = 400;
     throw err;

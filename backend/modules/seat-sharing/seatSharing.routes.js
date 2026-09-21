@@ -1,9 +1,13 @@
 const express = require("express");
 const controller = require("./seatSharing.controller");
 const protect = require("../../shared/middleware/auth");
+const requireRole = require("../../shared/middleware/requireRole");
 
 const router = express.Router();
+// Seat-sharing is used only inside the CS exam-creation flow (discovery,
+// marking and read-only badges), so the whole surface is CS-only.
 router.use(protect);
+router.use(requireRole("cs"));
 
 // Discovery — the create-exams UI queries this to surface "Use Shared Seats"
 // banners on new exams that overlap someone else's shareable room.

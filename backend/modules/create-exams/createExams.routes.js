@@ -3,10 +3,14 @@ const createExamsController = require("./createExams.controller");
 const cieController = require("./cie.controller");
 const seeController = require("./see.controller");
 const protect = require("../../shared/middleware/auth");
+const requireRole = require("../../shared/middleware/requireRole");
 
 const router = express.Router();
 
+// The entire exam-creation wizard (CIE + SEE planning and finalize) is a CS-only
+// surface — no operational-role UI touches it.
 router.use(protect);
+router.use(requireRole("cs"));
 
 router.get("/", createExamsController.getStatus);
 

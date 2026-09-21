@@ -24,11 +24,61 @@ async function run() {
     }
   });
 
-  // --- Register ---
+  // Creating users is a CS-only administrative action, so authenticate as the
+  // admin before the register tests (which used to run unauthenticated).
+  await test("POST /auth/login - admin (for user creation)", async () => {
+    const res = await api.post("/auth/login", {
+      email: CONFIG.ADMIN_EMAIL,
+      password: CONFIG.ADMIN_PASSWORD,
+    });
+    assertStatus(res, 200);
+    assertExists(res.data.data.token, "token");
+    token = res.data.data.token;
+    setToken(token);
+  });
+
+  // --- Register (CS-only) ---
   const testEmail = `testuser_${Date.now()}@test.com`;
   let registered = false;
 
-  await test("POST /auth/register - register new user", async () => {
+  await test("POST /auth/register - unauthenticated is rejected", async () => {
+    clearToken();
+    try {
+      await api.post("/auth/register", {
+        name: "Anon",
+        email: `anon_${Date.now()}@test.com`,
+        password: "test123456",
+        phone: "9876543210",
+        designation: "Other",
+        roles: ["invigilator"],
+      });
+      throw new Error("Unauthenticated register should have been rejected");
+    } catch (err) {
+      assertExists(err.response, "error response");
+      assertStatus(err.response, 401);
+    } finally {
+      setToken(token);
+    }
+  });
+
+  await test("POST /auth/register - cs is not a self-grantable role", async () => {
+    try {
+      await api.post("/auth/register", {
+        name: "Wannabe Admin",
+        email: `cs_${Date.now()}@test.com`,
+        password: "test123456",
+        phone: "9876543210",
+        designation: "Other",
+        roles: ["cs"],
+      });
+      throw new Error("register with roles:[cs] should have been rejected");
+    } catch (err) {
+      assertExists(err.response, "error response");
+      assertStatus(err.response, 400);
+    }
+  });
+
+  await test("POST /auth/register - admin registers new user", async () => {
     const res = await api.post("/auth/register", {
       name: "Test User",
       email: testEmail,
@@ -39,7 +89,6 @@ async function run() {
       roles: ["invigilator"],
     });
     assertStatus(res, 201);
-    assertExists(res.data.data.token, "token");
     assertExists(res.data.data.user, "user");
     assertEqual(res.data.data.user.email, testEmail, "email");
     registered = true;

@@ -555,9 +555,19 @@ const getAllRequests = async (query) => {
   return changeRequestRepository.findAll(filter);
 };
 
-const getRequestById = async (id) => {
+// A change request is visible to the teacher who submitted it or to a CS admin.
+// requestedBy is populated by findById, so its id is requestedBy._id.
+const getRequestById = async (id, requester) => {
   const request = await changeRequestRepository.findById(id);
   if (!request) throw new AppError("Change request not found", 404);
+
+  if (!requester || requester.activeRole !== "cs") {
+    const ownerId = String(request.requestedBy?._id || request.requestedBy);
+    if (!requester || ownerId !== String(requester.id)) {
+      // 404 rather than 403 — don't reveal another user's request exists.
+      throw new AppError("Change request not found", 404);
+    }
+  }
   return request;
 };
 

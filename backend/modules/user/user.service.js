@@ -26,7 +26,11 @@ const createUser = async ({
     ? [role]
     : undefined;
 
-  const finalRoles = enforceRolesForDesignation(designation, requestedRoles);
+  // createUser is reached only through the requireRole("cs") route, so the
+  // caller is a verified admin and may grant "cs".
+  const finalRoles = enforceRolesForDesignation(designation, requestedRoles, {
+    allowCs: true,
+  });
 
   const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
 
@@ -41,12 +45,25 @@ const createUser = async ({
   });
 };
 
-const getAllUsers = async (query) => {
-  const filter = {};
+// `requester` is req.user. A CS admin may list the whole directory (with phone
+// numbers). Any other authenticated role may only run a role-scoped lookup
+// (the swap-candidate picker) and never receives phone numbers — this is what
+// stops a plain invigilator from dumping the full staff directory.
+const getAllUsers = async (query, requester) => {
+  const isCs = requester && requester.activeRole === "cs";
 
-  if (query.department) filter.department = query.department;
-  if (query.role) filter.roles = query.role; // matches any user whose roles array contains `role`
-  if (query.isActive !== undefined) filter.isActive = query.isActive === "true";
+  const filter = {};
+  if (query.department) filter.department = String(query.department);
+  if (query.role) filter.roles = String(query.role); // matches any user whose roles array contains `role`
+  if (query.isActive !== undefined) filter.isActive = String(query.isActive) === "true";
+
+  if (!isCs) {
+    // Non-CS: must scope by role, cannot enumerate everyone.
+    if (!query.role) {
+      throw new AppError("Not authorized to list all users", 403);
+    }
+    return userRepository.findAll(filter, userRepository.PUBLIC_FIELDS);
+  }
 
   return userRepository.findAll(filter);
 };
@@ -68,7 +85,10 @@ const updateUser = async (id, data) => {
       : data.role
       ? [data.role]
       : undefined;
-    data.roles = enforceRolesForDesignation(data.designation, requestedRoles);
+    // updateUser is reached only through the requireRole("cs") route.
+    data.roles = enforceRolesForDesignation(data.designation, requestedRoles, {
+      allowCs: true,
+    });
     delete data.role;
   } else {
     // Designation unchanged — do not allow direct role writes.

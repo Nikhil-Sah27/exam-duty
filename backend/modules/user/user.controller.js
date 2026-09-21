@@ -7,7 +7,7 @@ const create = catchAsync(async (req, res) => {
 });
 
 const getAll = catchAsync(async (req, res) => {
-  const users = await userService.getAllUsers(req.query);
+  const users = await userService.getAllUsers(req.query, req.user);
   res.status(200).json({ success: true, count: users.length, data: users });
 });
 

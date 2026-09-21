@@ -1,33 +1,56 @@
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
+const mongoSanitize = require("express-mongo-sanitize");
 const errorHandler = require("./shared/middleware/errorHandler");
 
 const app = express();
 
-// CORS — allow frontend origin
+// Parse the query string simply ("?a=b"), NOT with the extended `qs` parser
+// that turns "?status[$ne]=x" into a nested object. MUST be set before the
+// first app.use(): Express locks the query-parser middleware in on the first
+// middleware registration, so setting it afterwards is silently ignored.
+// Combined with mongoSanitize below and the String()-coercion in the services,
+// this closes NoSQL operator injection through query params.
+app.set("query parser", "simple");
+
+// Security response headers (CSP is left to the frontend host; this covers
+// X-Content-Type-Options, X-Frame-Options, HSTS, Referrer-Policy, etc.).
+app.use(helmet());
+
+// CORS — the frontend origin(s). Defaults cover local dev; production origins
+// come from CORS_ORIGINS (comma-separated). Ngrok tunnels are accepted only
+// outside production, so a live deploy no longer trusts every *.ngrok-free.app.
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:3001",
   "http://localhost:3002",
   "http://localhost:4173",
   "http://localhost:5173",
+  ...(process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)
+    : []),
 ];
+const allowNgrok = process.env.NODE_ENV !== "production";
 
-// Allow ngrok origins dynamically
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin) || /\.ngrok-free\.app$/.test(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
+    const ok =
+      !origin ||
+      allowedOrigins.includes(origin) ||
+      (allowNgrok && /\.ngrok-free\.app$/.test(origin));
+    callback(ok ? null : new Error("Not allowed by CORS"), ok);
   },
   credentials: true,
 }));
 
-// Body parsers
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Body parsers with an explicit size cap (bounds request-body DoS).
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+
+// Strip any keys containing "$" or "." from body/query/params, so no request
+// can smuggle a Mongo operator into a query object.
+app.use(mongoSanitize());
 
 // Health check
 app.get("/", (req, res) => {

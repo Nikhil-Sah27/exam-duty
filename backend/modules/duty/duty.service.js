@@ -416,21 +416,31 @@ const adminAssignDutyGroup = async (data, adminId) => {
   return populated;
 };
 
-const getAllDuties = async (query) => {
+// `requester` is req.user. CS may query across all teachers; every other role
+// is silently pinned to its own duties regardless of the ?teacher= it sends, so
+// no one can read another teacher's roster. All query values are coerced to
+// primitives first, so `?status[$ne]=...`-style operator injection cannot reach
+// the Mongo filter.
+const getAllDuties = async (query, requester) => {
   const filter = {};
 
-  if (query.exam) filter.exam = query.exam;
-  if (query.teacher) filter.teacher = query.teacher;
-  if (query.room) filter.room = query.room;
-  if (query.status) filter.status = query.status;
-  if (query.date) filter.date = new Date(query.date);
+  if (query.exam) filter.exam = String(query.exam);
+  if (query.teacher) filter.teacher = String(query.teacher);
+  if (query.room) filter.room = String(query.room);
+  if (query.status) filter.status = String(query.status);
+  if (query.date) filter.date = new Date(String(query.date));
 
   if (query.from || query.to) {
     filter.date = filter.date || {};
     if (typeof filter.date === "object" && !(filter.date instanceof Date)) {
-      if (query.from) filter.date.$gte = new Date(query.from);
-      if (query.to) filter.date.$lte = new Date(query.to);
+      if (query.from) filter.date.$gte = new Date(String(query.from));
+      if (query.to) filter.date.$lte = new Date(String(query.to));
     }
+  }
+
+  // Non-CS callers only ever see their own duties.
+  if (!requester || requester.activeRole !== "cs") {
+    filter.teacher = String(requester.id);
   }
 
   return dutyRepository.findAll(filter);
@@ -488,15 +498,28 @@ const getInvigilatorsForRooms = async (examRoomIds) => {
     }));
 };
 
-const getDutyById = async (id) => {
+// A duty may only be read/mutated by the teacher it belongs to or by a CS admin.
+// findById populates `teacher`, so the owner id is duty.teacher._id.
+const assertDutyAccess = (duty, requester) => {
+  if (requester && requester.activeRole === "cs") return;
+  const ownerId = String(duty.teacher?._id || duty.teacher);
+  if (!requester || ownerId !== String(requester.id)) {
+    // 404, not 403 — don't confirm the existence of another teacher's duty.
+    throw new AppError("Duty not found", 404);
+  }
+};
+
+const getDutyById = async (id, requester) => {
   const duty = await dutyRepository.findById(id);
   if (!duty) throw new AppError("Duty not found", 404);
+  assertDutyAccess(duty, requester);
   return duty;
 };
 
-const cancelDuty = async (id, cancelReason) => {
+const cancelDuty = async (id, cancelReason, requester) => {
   const duty = await dutyRepository.findById(id);
   if (!duty) throw new AppError("Duty not found", 404);
+  assertDutyAccess(duty, requester);
   if (duty.status === "cancelled") throw new AppError("Duty is already cancelled", 400);
   if (duty.status === "completed") throw new AppError("Cannot cancel a completed duty", 400);
 
