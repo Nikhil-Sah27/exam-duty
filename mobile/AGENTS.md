@@ -21,7 +21,8 @@ right. Two already-bitten examples, both fixed in this tree:
 ```bash
 cd mobile
 npm install --legacy-peer-deps   # required — optional-peer conflict inside Expo's own tree
-npx tsc --noEmit                 # must exit 0 before anything lands
+npx tsc --noEmit                 # gate 1 — must exit 0 before anything lands
+npm test                         # gate 2 — jest-expo unit suite, must be green
 npx expo-doctor                  # run after touching app.json or package.json
 npx expo start
 ```
@@ -29,6 +30,13 @@ npx expo start
 `--legacy-peer-deps` is not optional: two `react-native-worklets` versions
 inside Expo's dependency tree fail npm's strict resolver. `expo-doctor` passes
 regardless.
+
+`npm test` is the second gate, not an optional extra — currently 9 suites / 150
+tests, all green. The `TZ=Asia/Kolkata` in the script is load-bearing: 6 tests
+across 3 suites fail under `TZ=UTC`, so run `npm test`, never a bare `npx jest`.
+The suite is headless by design (see the header in `jest.config.js`) — pure
+logic only, no rendered output — so a change to grouping, filtering, the auth
+store or the axios interceptor is expected to come with a test.
 
 ## Rules that bite here
 

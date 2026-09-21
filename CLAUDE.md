@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Read First
 
-`README.md` is long and current for domain concepts (roles, DCS group sizing formula, seat sharing, full API reference, model list). `APP_FLOW.md` walks the same ground per-role, screen by screen — web only. `mobile/README.md` is the equivalent for the Expo app: route table, source map, backend-from-a-phone setup. Do not duplicate those here — this file covers commands, invariants, and the places where the code has drifted from the docs.
+`README.md` is long and current for domain concepts (roles, DCS group sizing formula, seat sharing, full API reference, model list). `APP_FLOW.md` walks the same ground per-role, screen by screen — web only. `mobile/README.md` is the equivalent for the Expo app: route table, source map, backend-from-a-phone setup. `CREDENTIALS.md` holds the seeded logins and the `node scripts/seed-users.js` step that creates them — `invigilator@examduty.com` is the multi-role account, and the only seeded one that exercises the `tempToken` → `/auth/select-role` path. Do not duplicate those here — this file covers commands, invariants, and the places where the code has drifted from the docs.
 
 ## Commands
 
@@ -39,6 +39,15 @@ API_URL=https://x.ngrok-free.app/api npm test   # target a remote server
 
 The runner threads the token from the Auth suite into later suites, so a single suite run re-authenticates on its own. Admin creds live in `tests/config.js`.
 
+`mobile/` has a **second, unrelated suite** — real unit tests, no server, no simulator:
+
+```bash
+cd mobile && npm test              # jest-expo: 9 suites / 150 tests, ~3s
+npm test -- rsGrouping             # one suite, matched on path fragment
+```
+
+`TZ=Asia/Kolkata` in that `test` script is **load-bearing**: under `TZ=UTC`, 6 tests across 3 suites fail on date-bucketing. Always go through `npm test` — a bare `npx jest` inherits the machine's zone and reports false failures. `jest.config.js` picks up only `src/**/__tests__/**/*.test.ts(x)`, and the suite deliberately covers pure logic (RS grouping, slot filtering, stores, the axios interceptor) rather than rendered output, because the machines this is developed on have no simulator. It also pins `moduleFileExtensions` with `ts`/`tsx` first, so a stray compiled `.js` can never win resolution over its source.
+
 ### Type checking and lint
 
 - `npx tsc -b` from `frontend/` — **currently clean: zero errors**. The `UserRole` nullability errors left over from the multi-role migration are fixed. Any error it reports is one you introduced. It is an incremental build, so use `npx tsc -b --force` when you want to be sure the cached `tsconfig.tsbuildinfo` isn't hiding anything.
@@ -61,12 +70,13 @@ An Expo **SDK 57** app for the three operational roles only — Invigilator, RS,
 cd mobile
 npm install --legacy-peer-deps     # required, see below
 npx expo start                     # Expo Go QR, or i / a for a simulator
-npx tsc --noEmit                   # THE GATE — must exit 0 before anything lands
+npx tsc --noEmit                   # GATE 1 — must exit 0 before anything lands
+npm test                           # GATE 2 — jest-expo unit suite (see Tests above)
 npx expo-doctor                    # run after touching app.json or package.json
 ```
 
 - **`--legacy-peer-deps` is mandatory.** Two `react-native-worklets` versions inside Expo's own dependency tree fail npm's strict resolver. `expo-doctor` passes regardless — this is Expo's tree, not a broken lockfile.
-- **`npx tsc --noEmit` is the only gate**, and it is currently clean. There is no ESLint config in `mobile/`. `expo/tsconfig.base` sets `noEmit`, so any `.js` sitting next to a `.tsx` under `src/` is a stray build artifact, never source — do not commit one.
+- **`npx tsc --noEmit` and `npm test` are the two gates**, and both are currently clean — tsc silent, 9 suites / 150 tests passing. There is no ESLint config in `mobile/`. `expo/tsconfig.base` sets `noEmit`, so any `.js` sitting next to a `.tsx` under `src/` is a stray build artifact, never source — do not commit one.
 - **Read the versioned docs**, https://docs.expo.dev/versions/v57.0.0/, before writing Expo code. SDK 57 broke enough priors that writing from memory reliably produces wrong code: tabs come from `expo-router/js-tabs`, and `setNotificationHandler` wants `shouldShowBanner`/`shouldShowList` rather than the deprecated `shouldShowAlert`.
 - **API base URL is required configuration.** A phone cannot reach the dev machine's `localhost`, so `mobile/src/api/client.ts` resolves `EXPO_PUBLIC_API_URL` (from `mobile/.env`, inlined at bundle time — restart the bundler after editing) then `expo.extra.apiUrl` from `app.json`, and throws a named error if neither is set. The value must include the `/api` prefix. Use the LAN IP or an ngrok URL; the backend's CORS allowlist already accepts `*.ngrok-free.app`, and CORS does not constrain the native app at all (React Native sends no `Origin`).
 - **Remote push does not work in Expo Go** (removed on Android in SDK 53, and this app declines it on both platforms since `app.json` carries no `extra.eas.projectId`). Registration fails soft with a typed reason and blocks no screen; the in-app inbox works everywhere. Testing real push means `eas init` plus a development build.
@@ -100,6 +110,8 @@ The README still describes single-role users (`User.role`). **The code is multi-
 - `requireRole(...)` checks `activeRole`, **not** membership in `roles` — a user with two roles must have selected the right one to pass.
 - Roles are derived from designation, not chosen freely: `shared/utils/roleResolver.js` maps `HOD/Dean → [dcs]`, `Professor → [rs]`, `Associate/Assistant Professor → [rs, invigilator]`; only `"Other"` lets the caller pick exactly one role. **`frontend/src/shared/utils/roleResolver.ts` is a hand-maintained mirror — change both.** Backend is the enforcement point; the frontend copy only drives the user form.
 - Frontend: `useAuthStore` holds `token` and `tempToken` separately; the axios interceptor prefers `token` and falls back to `tempToken`. `/select-role` is a real route (`RoleSelectionPage`), and a per-user preferred role is remembered in `localStorage`.
+
+`NGROK_SETUP_GUIDE.md` carries its own stale banner and is kept only as history: it was written for a Next.js frontend on port 3001 proxying a backend on 5000. The shape of the problem — one tunnel, API calls reaching the backend through the frontend's own origin — still holds; every port number, env var name and `next.config.ts` rewrite in it does not.
 
 `backend/modules/duty-calculation/` (mounted at `/api/duty-calculation`, endpoints listed in the README) computes invigilator workload targets on demand — semester → department → institution duty totals and per-teacher progress. Nothing is persisted; every read recomputes from current DB state. Eligibility is strictly designation-based (`Assistant Professor` / `Associate Professor` only).
 
